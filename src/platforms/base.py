@@ -65,15 +65,44 @@ class BasePlatform:
         return None
 
     def debug_shot(self, page: "Page", tag: str) -> str:
-        """失败时留一张截图，方便定位页面改版或流程卡点。"""
+        """失败时留一张截图，方便定位页面改版或流程卡点。
+
+        踩过的坑（2026-11-24）：Chromium 只在窗口「可见」时才产帧。窗口最小化或
+        被别的窗口挡住时，page.screenshot() 会一直等到超时（默认 30 秒）再抛异常，
+        而这里把异常整个吞掉返回 ""，结果那次 verify_failed 一张图都没留下来，
+        排查时完全没有现场。所以现在：
+          1) 先 bring_to_front() 让窗口可见；
+          2) 显式给 12 秒超时，别让一次失败卡住 30 秒；
+          3) 仍失败就退到 CDP Page.captureScreenshot(fromSurface=False)，
+             这条路直接从渲染器取图，不依赖窗口可见性。
+        """
         try:
             import time as _time
 
             folder = self.config.path("storage.debug_dir", "./data/debug")
             folder.mkdir(parents=True, exist_ok=True)
             path = folder / f"{self.name}_{tag}_{int(_time.time())}.png"
-            page.screenshot(path=str(path))
-            return str(path)
+            try:
+                page.bring_to_front()
+            except Exception:
+                pass
+            try:
+                page.screenshot(path=str(path), timeout=12000)
+                return str(path)
+            except Exception:
+                pass
+            # 退路：CDP 直接取渲染器画面，窗口不可见也能出图
+            try:
+                import base64
+
+                cdp = page.context.new_cdp_session(page)
+                result = cdp.send(
+                    "Page.captureScreenshot", {"format": "png", "fromSurface": False}
+                )
+                path.write_bytes(base64.b64decode(result["data"]))
+                return str(path)
+            except Exception:
+                return ""
         except Exception:
             return ""
 

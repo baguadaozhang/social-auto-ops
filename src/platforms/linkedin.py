@@ -312,14 +312,38 @@ class LinkedInPlatform(BasePlatform):
         page.mouse.click(point["x"], point["y"])
         return True
 
+    @staticmethod
+    def _editor_cleared(editor) -> bool:
+        """编辑框是否已清空（提交成功后 LinkedIn 会清空它或把它从 DOM 移走）。"""
+        try:
+            if editor is None or editor.count() == 0:
+                return True
+            return (editor.inner_text() or "").strip() == ""
+        except Exception:
+            return True
+
     def _wait_comment_visible(
-        self, page, card, head: str, timeout_s: float = 8.0
+        self,
+        page,
+        card,
+        head: str,
+        timeout_s: float = 8.0,
+        index: int | None = None,
+        editor=None,
     ) -> bool:
         """提交后等 2-4 秒，回读评论区确认自己的评论已经出现。
 
-        只等 2 秒就判失败会误判（懒加载 / 网络慢），所以先在 2-4 秒处看一眼，
-        没出现再继续轮询到 timeout；
-        仍没出现才交给调用方决定重试还是记失败。
+        踩过的坑（2026-11-24）：那次评论其实发布成功了，却判成「没发出去」，
+        进而误触发 24 小时熔断。原因是旧实现只认 ``card.inner_text()``，而且把
+        异常整个吞掉——卡片一旦因为列表重排而指向别的帖子，就永远匹配不上。
+        另外注意：LinkedIn 现在的 class 名是哈希化的，``[class*="comment"]``
+        一个都命中不了，所以不能靠 class 选择器定位评论。
+
+        现在是两级判定：
+          1) 卡片文本里出现 head —— 精确，优先；
+          2) 卡片里没有，但**编辑框确实已清空**、且整页文本里出现 head —— 兜底。
+             这一条必须卡住「编辑框已清空」，否则命中的是还留在编辑框里的草稿，
+             会变成「没发出去却算成功」的假阳性。
         """
         page_wait(page, 3000, jitter=0.34)  # 2000~4000ms
         deadline = time.monotonic() + timeout_s
@@ -330,6 +354,12 @@ class LinkedInPlatform(BasePlatform):
                         return True
                 except Exception:
                     pass
+                if self._editor_cleared(editor):
+                    try:
+                        if head in page.inner_text("body"):
+                            return True
+                    except Exception:
+                        pass
             if time.monotonic() >= deadline:
                 return False
             page_wait(page, 900, jitter=0.25)
@@ -413,7 +443,16 @@ class LinkedInPlatform(BasePlatform):
             # 下次对同一帖子重发才是真正伤账号的行为。
             for attempt in (1, 2):
                 if attempt == 2:
-                    # 第一次回读没看到：重新打开编辑器，整段重来一次
+                    # 重发前再给一次更长的观察窗口。宁可多等，也不能盲目重发——
+                    # 同一帖子下留两条一模一样的评论是很强的 spam 信号
+                    # （11-24 那次是碰巧被 LinkedIn 自己的重复评论拦截兜住了，
+                    #   不能把账号安全寄托在平台兜底上）。
+                    if self._wait_comment_visible(
+                        page, card, head, timeout_s=6.0, index=index, editor=editor
+                    ):
+                        visible = True
+                        break
+                    # 确认真的没发出去，才重新打开编辑器从头来一次
                     editor = self._open_comment_editor(page, card, index)
                     if editor is None:
                         reason = "重试时未找到评论输入框"
@@ -430,7 +469,7 @@ class LinkedInPlatform(BasePlatform):
                     continue
 
                 # 提交后等 2-4 秒回读评论区；没出现先继续轮询，仍没有才判失败
-                if self._wait_comment_visible(page, card, head):
+                if self._wait_comment_visible(page, card, head, index=index, editor=editor):
                     visible = True
                     break
 
@@ -447,6 +486,12 @@ class LinkedInPlatform(BasePlatform):
 
             if not visible:
                 shot = self.debug_shot(page, f"comment_not_visible_{index}")
+                # 失败时把帖子链接一起记下来：11-24 那次失败没有 post_url，
+                # 只能事后翻「我的动态-评论」才确认评论其实发出去了。
+                try:
+                    post_url = self.card_permalink(page, index)
+                except Exception:
+                    post_url = ""
                 self.db.log(
                     self.name, "comment", "verify_failed",
                     {
@@ -454,14 +499,21 @@ class LinkedInPlatform(BasePlatform):
                         "base_text": base_text or text,
                         "reason": reason,
                         "attempts": 2,
+                        "post_url": post_url,
                         "screenshot": shot,
                         "note": "提交后 2-4 秒回读评论区未见到该评论，重试 1 次仍失败；不计配额",
                     },
                 )
-                # 软限制：两次都没在评论区看到自己的评论，按"疑似限流"处理，
-                # 复用 24 小时冷却——继续发只会更快触到硬限制。
+                # 软限制：两次都没在评论区看到自己的评论，按"疑似限流"处理。
+                # 但只给一段短冷却：这是单次、证据偏弱的信号（11-24 那次评论其实
+                # 发布成功了，是我们的回读判定看漏了），用 24 小时冷却等于白白停一天。
+                # 真正明确的限流提示会走 check_soft_limit，那条仍按 24 小时走。
                 try:
-                    self.risk.trip(self.name, "评论提交后不可见（疑似限流）")
+                    self.risk.trip(
+                        self.name,
+                        "评论提交后不可见（疑似限流）",
+                        hours=int(self.config.get("circuit_breaker.verify_failed_hours", 3)),
+                    )
                 except CircuitBreakerTripped:
                     pass
                 return {

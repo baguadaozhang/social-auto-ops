@@ -247,9 +247,16 @@ class RiskController:
             if phrase in blob:
                 self.trip(platform, f"软限流提示: {phrase}")
 
-    def trip(self, platform: str, reason: str) -> None:
-        """触发熔断：标记账号状态 + 设置冷却截止时间。"""
-        hours = int(self.config.get("circuit_breaker.cooldown_hours", 24))
+    def trip(self, platform: str, reason: str, hours: int | None = None) -> None:
+        """触发熔断：标记账号状态 + 设置冷却截止时间。
+
+        hours 留空用全局 circuit_breaker.cooldown_hours（默认 24）。
+        证据强弱不同，冷却时长也该不同：像「评论提交后看不到」这种单次、
+        证据偏弱的信号用短冷却，别为一个可能的误判赔掉一整天
+        （2026-11-24 就是这么白停了一天的）。
+        """
+        if hours is None:
+            hours = int(self.config.get("circuit_breaker.cooldown_hours", 24))
         until = (datetime.now() + timedelta(hours=hours)).isoformat(timespec="seconds")
         self.db.set_account_status(platform, "limited", until)
         self.db.log(platform, "circuit_breaker", "failed", {"reason": reason, "until": until})
