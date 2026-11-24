@@ -93,12 +93,26 @@ class Follower:
         """三类只加其一：评论过的帖主 > 二度人脉 > 帖子命中行业话题。
 
         三类都不中就不加——关注一个完全不相关的人，对账号是负资产。
+
+        公司页单独一条路（2026-11-24 定：公司页要关注）。关注公司页是正常人类
+        行为、风险低，对卫浴出口反而是有用的信息来源；但它不建立个人人脉，
+        所以额外要求「帖子必须命中行业话题」，不会因为"是个公司"就放行无关内容。
+        想关掉就把 follow.allow_company 设为 false。
         """
         if not info.get("ok"):
             return False, "no_follow_button"
         url = str(info.get("url") or "").strip()
+        kind = str(info.get("kind") or "")
         if url and self.db.has_lead_url(url):
             return True, "commented_before"
+        if kind == "company":
+            if not self.config.get("follow.allow_company", True):
+                return False, "company_not_allowed"
+            if tags_in(post_text):
+                return True, "company_topic_match"
+            if industry_match(post_text):
+                return True, "company_industry_match"
+            return False, "company_not_relevant"
         degree = int(info.get("degree") or 0)
         if 1 <= degree <= 2:
             return True, "2nd_degree"

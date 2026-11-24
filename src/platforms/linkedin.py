@@ -585,27 +585,36 @@ class LinkedInPlatform(BasePlatform):
     """
 
     def follow_target(self, page, index: int) -> dict:
-        """读第 index 张卡片的关注信息：有没有关注按钮、作者、人脉度数。"""
+        """读第 index 张卡片的关注信息：有没有关注按钮、作者是谁、是人还是公司。
+
+        预检就用 _ACTOR_JS（而不是只认 /in/ 的 _AUTHOR_JS），这样关注门槛
+        在点下去之前就知道对方是公司页，才能按公司策略单独判定。
+        """
         try:
             card = self._card_locator(page, index)
         except Exception:
             return {"ok": False, "reason": "card_error"}
         button = self._first_in(card, self._FOLLOW_BTN_SELECTORS)
-        author: dict = {}
+        actor: dict = {}
         try:
-            author = card.evaluate(self._AUTHOR_JS) or {}
+            actor = card.evaluate(self._ACTOR_JS) or {}
         except Exception:
             pass
         try:
             degree = int(card.evaluate(self._DEGREE_JS) or 0)
         except Exception:
             degree = 0
+        kind = str(actor.get("kind") or "")
+        raw_name = str(actor.get("name") or "").strip()
+        name = raw_name.splitlines()[0].strip() if raw_name else ""
         return {
             "ok": button is not None,
             "has_button": button is not None,
-            "target": str(author.get("name") or "").strip(),
-            "url": str(author.get("url") or "").strip(),
-            "degree": degree,
+            "target": name,
+            "url": str(actor.get("url") or "").strip(),
+            # 公司页没有「几度人脉」，取 0 是正常值而非异常
+            "degree": degree if kind == "person" else 0,
+            "kind": kind,
         }
 
     def _wait_followed(self, page, card, timeout_s: float = 6.0) -> bool:

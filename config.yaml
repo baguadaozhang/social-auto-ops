@@ -111,6 +111,13 @@ circuit_breaker:
   # 结果按 24 小时熔断白停了一天。明确的限流提示仍走 cooldown_hours。
   verify_failed_hours: 3
 
+# 关注策略（这里的「关注」= Follow 按钮，不是 Connect 发邀请）
+follow:
+  # 是否关注公司页。2026-11-24 决定保留：关注公司页是正常人类行为、风险低，
+  # 对卫浴出口反而是有用的信息来源。但它不建立个人人脉，所以公司页额外要求
+  # 帖子命中行业话题（见 follower._quality_pass），不会放行无关内容。
+  allow_company: true
+
 # 评论量分阶段提升：测试期低量（先发现脚本问题、别封号），凭证据一档一档放。
 # 每档除了时间门槛 min_day，还必须过健康门槛 gate：不达标就停在上一档。
 comment_ramp:
