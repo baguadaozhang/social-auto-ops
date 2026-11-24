@@ -149,6 +149,10 @@ schedule:
   comment_probability: 0.55
   # 评论条数（随机区间）
   comments_per_session: [1, 2]
+  # 每个时段关注几个人（随机区间）；和浏览/评论混着做，不单独跑批次。
+  # 2026-11-24：follow = 领英「关注」（Follow 按钮），不是 Connect 邀请。
+  # 同一时段连点二十几个关注是最典型的机器人指纹，所以只给 2-4 个。
+  follow_per_session: [2, 4]
   # 队列里有稿子时，这个时段会不会顺手发
   post_probability: 0.35
   # 顺带做点不产生内容的动作（展开长文/看通知/随便滚）的概率
@@ -202,6 +206,9 @@ schedule:
   #   等于这个时段白跑一趟（还消耗了浏览时间）；命中就至少评 1 条，
   #   行为曲线也更连续。
   warmup_comments_per_session: [1, 2]
+  # 2026-11-24：冷启动期每天最多关注几个。关注无需对方接受、风控权重低，
+  # 10/天足够；冷启动结束后用 quota.linkedin.follow（15）。
+  warmup_follow: 10
 
 platforms:
   linkedin:

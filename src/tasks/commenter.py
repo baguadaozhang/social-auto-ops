@@ -65,6 +65,45 @@ TAG_KEYWORDS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+def keyword_hits(body: str, keyword: str) -> int:
+    """中文按子串匹配；英文按整词匹配，避免 AI 命中 available 这类误判。"""
+    if keyword.isascii():
+        return len(re.findall(rf"\b{re.escape(keyword)}\b", body, re.IGNORECASE))
+    return body.count(keyword)
+
+
+def keyword_weight(keyword: str) -> int:
+    """越具体的词越能代表话题，给更高权重。
+
+    英文短语(supply chain) > 单词(logistics)；中文长词(供应链) > 短词(物流)。
+    避免几个弱词打平导致随机选题。
+    """
+    if keyword.isascii():
+        return 2 if " " in keyword else 1
+    return 2 if len(keyword) >= 3 else 1
+
+
+def tag_scores(text: str) -> dict[str, int]:
+    """每个话题的加权得分，用于判断帖子主要在讲什么。
+
+    按命中次数加权（截断到 3 次）：整篇都在讲海运的帖子应该比
+    一句带过海运的帖子得分高，但单关键词堆 10 次不应无限加分。
+    """
+    body = text or ""
+    scores: dict[str, int] = {}
+    for tag, keywords in TAG_KEYWORDS.items():
+        score = sum(
+            keyword_weight(k) * min(keyword_hits(body, k), 3) for k in keywords
+        )
+        if score:
+            scores[tag] = score
+    return scores
+
+
+def tags_in(text: str) -> set[str]:
+    return set(tag_scores(text))
+
+
 # 复用时才加的随机前后缀，避免同一句话一字不差地重复出现。
 # 按语言分开：英文评论绝不能出现中文前后缀（"同意，Great point…" 一眼假）
 _OPENERS_ZH = ("", "", "同意，", "说得好，", "这个角度有意思，", "有同感，")
@@ -159,41 +198,18 @@ class Commenter:
 
     @staticmethod
     def _keyword_hits(body: str, keyword: str) -> int:
-        """中文按子串匹配；英文按整词匹配，避免 AI 命中 available 这类误判。"""
-        if keyword.isascii():
-            return len(re.findall(rf"\b{re.escape(keyword)}\b", body, re.IGNORECASE))
-        return body.count(keyword)
+        return keyword_hits(body, keyword)
 
     @staticmethod
     def _keyword_weight(keyword: str) -> int:
-        """越具体的词越能代表话题，给更高权重。
-
-        英文短语(supply chain) > 单词(logistics)；中文长词(供应链) > 短词(物流)。
-        避免几个弱词打平导致随机选题。
-        """
-        if keyword.isascii():
-            return 2 if " " in keyword else 1
-        return 2 if len(keyword) >= 3 else 1
+        return keyword_weight(keyword)
 
     def _tag_scores(self, text: str) -> dict[str, int]:
-        """每个话题的加权得分，用于判断帖子主要在讲什么。
-
-        按命中次数加权（截断到 3 次）：整篇都在讲海运的帖子应该比
-        一句带过海运的帖子得分高，但单关键词堆 10 次不应无限加分。
-        """
-        body = text or ""
-        scores: dict[str, int] = {}
-        for tag, keywords in TAG_KEYWORDS.items():
-            score = sum(
-                self._keyword_weight(k) * min(self._keyword_hits(body, k), 3)
-                for k in keywords
-            )
-            if score:
-                scores[tag] = score
-        return scores
+        # 逻辑放在模块级函数里，follower（关注任务）也要用同一套话题判定
+        return tag_scores(text)
 
     def _tags_in(self, text: str) -> set[str]:
-        return set(self._tag_scores(text))
+        return tags_in(text)
 
     def is_discussable(self, post_text: str) -> bool:
         """判断这条帖子值不值得评论。

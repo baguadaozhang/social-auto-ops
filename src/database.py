@@ -372,6 +372,17 @@ class Database:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def has_lead_url(self, author_url: str) -> bool:
+        """这个人之前被评论过吗？关注质量阀用：评论过的帖主优先关注。"""
+        url = (author_url or "").strip()
+        if not url:
+            return False
+        with self.session() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM leads WHERE author_url = ? LIMIT 1", (url,)
+            ).fetchone()
+        return row is not None
+
     # ---------- 元数据 ----------
     def get_meta(self, key: str, default: str | None = None) -> str | None:
         with self.session() as conn:

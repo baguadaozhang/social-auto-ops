@@ -39,6 +39,7 @@ from src.humanize import Humanizer, page_wait
 from src.risk_control import RiskController
 from src.scheduler import DayPlanner, Scheduler
 from src.tasks.commenter import Commenter
+from src.tasks.follower import Follower
 from src.tasks.poster import Poster
 
 PLATFORMS = ("linkedin", "facebook")
@@ -85,6 +86,17 @@ def build(argv: list[str] | None = None) -> argparse.ArgumentParser:
         "--no-human", action="store_true",
         help="本次跳过人工介入分流（仅用于你明确要一次跑完的场合）",
     )
+
+    p_follow = sub.add_parser(
+        "follow", help="关注目标买家（只点「关注」，不发 Connect 邀请）"
+    )
+    p_follow.add_argument(
+        "--platform", default="linkedin", choices=("linkedin",),
+        help="关注模块暂只支持 linkedin",
+    )
+    p_follow.add_argument("--count", type=int, default=3, help="本次关注人数")
+    p_follow.add_argument("--keyword", help="按关键词搜索目标后关注")
+    p_follow.add_argument("--url", help="指定列表页地址")
 
     sub.add_parser("status", help="查看账号状态、当日配额与待办数量")
 
@@ -320,6 +332,18 @@ def main(argv: list[str] | None = None) -> int:
                 url=args.url,
                 texts=texts,
                 skip_human=args.no_human,
+            )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "follow":
+        with BrowserManager(config) as browser:
+            result = Follower(browser, humanizer, risk, db, config).run(
+                count=args.count,
+                platform=args.platform,
+                keyword=args.keyword,
+                url=args.url,
+                manual=True,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

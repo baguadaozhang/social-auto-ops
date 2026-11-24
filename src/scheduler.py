@@ -19,6 +19,7 @@ from .database import Database
 from .humanize import Humanizer
 from .risk_control import CircuitBreakerTripped, RiskController
 from .tasks.commenter import Commenter
+from .tasks.follower import Follower
 from .tasks.poster import Poster
 
 
@@ -126,6 +127,11 @@ class DayPlanner:
             cfg.get("schedule.post_probability", 0.35)
         ):
             actions["post"] = True
+
+        # 关注：每个时段 2-4 个，和浏览/评论混在一起做。
+        # 不单独跑关注批次——同一时段连发 20 个关注是最典型的机器人指纹。
+        f_lo, f_hi = _rand_range(cfg, "schedule.follow_per_session", (2, 4))
+        actions["follows"] = int(random.uniform(f_lo, f_hi + 0.999))
 
         # 偶尔这个时段只是随便看看，什么都不做
         if not is_first and random.random() < 0.25:
@@ -274,6 +280,16 @@ class Scheduler:
             ).run(count=comments, platform=platform, keyword=keyword)
             results["comment_keyword"] = keyword
             results["comment"] = result
+
+        follows = int(actions.get("follows") or 0)
+        if follows > 0:
+            # 关注和评论用同一批行业关键词找目标（不单独开批次）
+            keywords = list(self.config.get("schedule.comment_keywords", []) or [])
+            keyword = random.choice(keywords) if keywords else None
+            result = Follower(
+                self.browser, self.humanizer, self.risk, self.db, self.config
+            ).run(count=follows, platform=platform, keyword=keyword)
+            results["follow"] = result
 
         if actions.get("post"):
             result = Poster(

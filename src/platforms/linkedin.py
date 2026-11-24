@@ -489,6 +489,134 @@ class LinkedInPlatform(BasePlatform):
         except Exception as exc:
             return {"success": False, "error": f"评论异常: {type(exc).__name__}: {exc}"}
 
+    # ---------- 关注（Follow）----------
+    # 注意：这是「关注」按钮，不是「Connect / 发邀请」。两者是两套限额：
+    # 关注不需要对方接受、不占邀请配额；邀请才是硬限制（成熟号约 100/周）。
+    _FOLLOW_BTN_SELECTORS = [
+        "button[aria-label^='关注']",
+        "button[aria-label^='Follow']",
+    ]
+    # 点完之后按钮/文案会变成这些（中英双语）
+    _FOLLOWED_MARKERS = (
+        "取消关注", "Unfollow", "正在关注", "Following", "已关注",
+    )
+    _DEGREE_JS = """
+    (el) => {
+      const t = (el.innerText || '').slice(0, 320);
+      let m = t.match(/(\\d)\\s*度/);
+      if (m) return parseInt(m[1], 10);
+      m = t.match(/(\\d)(st|nd|rd|th)/i);
+      if (m) return parseInt(m[1], 10);
+      return 0;
+    }
+    """
+
+    def follow_target(self, page, index: int) -> dict:
+        """读第 index 张卡片的关注信息：有没有关注按钮、作者、人脉度数。"""
+        try:
+            card = self._card_locator(page, index)
+        except Exception:
+            return {"ok": False, "reason": "card_error"}
+        button = self._first_in(card, self._FOLLOW_BTN_SELECTORS)
+        author: dict = {}
+        try:
+            author = card.evaluate(self._AUTHOR_JS) or {}
+        except Exception:
+            pass
+        try:
+            degree = int(card.evaluate(self._DEGREE_JS) or 0)
+        except Exception:
+            degree = 0
+        return {
+            "ok": button is not None,
+            "has_button": button is not None,
+            "target": str(author.get("name") or "").strip(),
+            "url": str(author.get("url") or "").strip(),
+            "degree": degree,
+        }
+
+    def _wait_followed(self, page, card, timeout_s: float = 6.0) -> bool:
+        """点完关注后回读按钮状态，确认真的生效（而不是只点了一下）。"""
+        page_wait(page, 1500, jitter=0.3)
+        deadline = time.monotonic() + timeout_s
+        while True:
+            blob = ""
+            try:
+                labels = card.evaluate(
+                    "(el) => [...el.querySelectorAll('button')].map("
+                    "b => (b.getAttribute('aria-label') || '') + '|' + (b.innerText || ''))"
+                    ".join('§')"
+                )
+                blob = (card.inner_text()[:600] or "") + "§" + (labels or "")
+            except Exception:
+                blob = ""
+            if any(mark in blob for mark in self._FOLLOWED_MARKERS):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            page_wait(page, 700, jitter=0.3)
+
+    def follow_on_card(self, page, index: int) -> dict:
+        """关注这张帖子的作者；不做 Connect / 不发邀请。"""
+        try:
+            cards = page.locator("div[role='listitem']")
+            if index >= cards.count():
+                return {"success": False, "error": f"卡片索引 {index} 超出范围"}
+            card = self._card_locator(page, index)
+            try:
+                card.scroll_into_view_if_needed(timeout=5000)
+                page_wait(page, 700, jitter=0.4)
+            except Exception:
+                pass
+
+            button = self._first_in(card, self._FOLLOW_BTN_SELECTORS)
+            if button is None:
+                return {"success": False, "error": "没有关注按钮（可能已关注）"}
+
+            label = ""
+            try:
+                label = (button.get_attribute("aria-label") or "").strip()
+            except Exception:
+                pass
+
+            self.humanizer.human_click(button)
+            if not self._wait_followed(page, card):
+                shot = self.debug_shot(page, f"follow_not_confirmed_{index}")
+                self.db.log(
+                    self.name, "follow", "verify_failed",
+                    {"target": label, "screenshot": shot,
+                     "note": "点击关注后按钮状态未变，不计配额"},
+                )
+                return {
+                    "success": False,
+                    "error": "点击关注后状态未变，关注未生效",
+                    "screenshot": shot,
+                }
+
+            url = ""
+            degree = 0
+            try:
+                author = card.evaluate(self._AUTHOR_JS) or {}
+                url = str(author.get("url") or "")
+            except Exception:
+                pass
+            try:
+                degree = int(card.evaluate(self._DEGREE_JS) or 0)
+            except Exception:
+                degree = 0
+
+            self.db.increment_quota(self.name, "follow")
+            self.db.log(
+                self.name, "follow", "success",
+                {"target": label, "url": url, "degree": degree},
+            )
+            return {"success": True, "target": label, "url": url, "degree": degree}
+
+        except CircuitBreakerTripped as exc:
+            return {"success": False, "error": str(exc)}
+        except Exception as exc:
+            return {"success": False, "error": f"关注异常: {type(exc).__name__}: {exc}"}
+
     _POST_TEXT_JS = """
     (el) => {
       const sels = ["[data-testid='expandable-text-box']", ".feed-shared-text",
