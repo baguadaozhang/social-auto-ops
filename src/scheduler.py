@@ -221,6 +221,22 @@ class DayPlanner:
         return created
 
 
+def session_status(results: dict) -> str:
+    """根据一个时段的执行结果判定状态。
+
+    - 全部动作成功      -> done
+    - 有失败也有成功    -> partial（2026-11-24 之前这里一律记 done，明明只做了一半）
+    - 全部动作都失败    -> failed
+    """
+    errors = results.get("errors") or {}
+    did = [k for k in results if k not in ("errors", "comment_keyword")]
+    if errors and not did:
+        return "failed"
+    if errors:
+        return "partial"
+    return "done"
+
+
 class Scheduler:
     """到点执行作息表里的时段。"""
 
@@ -246,57 +262,94 @@ class Scheduler:
         return {"today": len(today), "tomorrow": len(tomorrow)}
 
     def _execute(self, platform: str, session: dict) -> dict:
+        """执行一个时段：每个动作各自成败，互不牵连。
+
+        2026-11-24 的教训：那次第 2 条评论被判失败后触发熔断，异常一路抛出，
+        同一时段里排的 2 个关注直接没跑，而会话状态还是 done——事后只能翻一堆
+        日志才看出「其实只做了一半」。所以：
+          - 每个动作单独 try，失败只记录，后面的动作照做；
+          - 顺序改成「关注在评论之前」：评论是风险最高、最容易被打断的动作，
+            不该让它吃掉关注这种低风险增长动作的额度。
+        """
         actions = _as_dict(session.get("actions"))
         results: dict[str, Any] = {}
+        errors: dict[str, str] = {}
+
+        def run_step(name: str, fn) -> None:
+            try:
+                results[name] = fn()
+            except CircuitBreakerTripped as exc:
+                errors[name] = f"熔断：{exc}"
+            except Exception as exc:  # noqa: BLE001
+                errors[name] = f"{type(exc).__name__}: {exc}"
 
         browse_minutes = float(actions.get("browse_minutes") or 0)
         if browse_minutes > 0:
-            page = self.browser.page(
-                platform, self.config.get(f"platforms.{platform}.feed_url", "")
-            )
-            self.risk.check_page(page, platform)
-            self.humanizer.warmup(page)
-            self.humanizer.idle_browse(page, minutes=browse_minutes)
-            results["browse_minutes"] = browse_minutes
 
-            # 顺带做点"不产生内容"的事：展开长文、看通知、随便滚
-            if random.random() < float(
-                self.config.get("schedule.extra_activity_probability", 0.5)
-            ):
-                base_url = self.config.get(f"platforms.{platform}.base_url", "")
-                feed_url = self.config.get(f"platforms.{platform}.feed_url", "")
-                results["extra_activity"] = self.humanizer.random_activity(
-                    page, base_url, feed_url
+            def _browse() -> dict:
+                page = self.browser.page(
+                    platform, self.config.get(f"platforms.{platform}.feed_url", "")
                 )
+                self.risk.check_page(page, platform)
+                self.humanizer.warmup(page)
+                self.humanizer.idle_browse(page, minutes=browse_minutes)
+                out: dict[str, Any] = {"browse_minutes": browse_minutes}
+                # 顺带做点"不产生内容"的事：展开长文、看通知、随便滚
+                if random.random() < float(
+                    self.config.get("schedule.extra_activity_probability", 0.5)
+                ):
+                    base_url = self.config.get(f"platforms.{platform}.base_url", "")
+                    feed_url = self.config.get(f"platforms.{platform}.feed_url", "")
+                    out["extra_activity"] = self.humanizer.random_activity(
+                        page, base_url, feed_url
+                    )
+                return out
+
+            run_step("browse", _browse)
+
+        # 关注和评论共用同一批行业关键词，不单独开关注批次——
+        # 同一时段连发一大批关注是最典型的机器人指纹。
+        keywords = list(self.config.get("schedule.comment_keywords", []) or [])
+
+        follows = int(actions.get("follows") or 0)
+        if follows > 0:
+
+            def _follow() -> dict:
+                return Follower(
+                    self.browser, self.humanizer, self.risk, self.db, self.config
+                ).run(
+                    count=follows,
+                    platform=platform,
+                    keyword=random.choice(keywords) if keywords else None,
+                )
+
+            run_step("follow", _follow)
 
         comments = int(actions.get("comments") or 0)
         if comments > 0:
             # 主动按关键词找相关话题，而不是等信息流推送
             # （信息流里大多是不相关的内容，会被话题过滤全部筛掉）
-            keywords = list(self.config.get("schedule.comment_keywords", []) or [])
-            keyword = random.choice(keywords) if keywords else None
-            result = Commenter(
-                self.browser, self.humanizer, self.risk, self.db, self.config
-            ).run(count=comments, platform=platform, keyword=keyword)
-            results["comment_keyword"] = keyword
-            results["comment"] = result
+            comment_keyword = random.choice(keywords) if keywords else None
 
-        follows = int(actions.get("follows") or 0)
-        if follows > 0:
-            # 关注和评论用同一批行业关键词找目标（不单独开批次）
-            keywords = list(self.config.get("schedule.comment_keywords", []) or [])
-            keyword = random.choice(keywords) if keywords else None
-            result = Follower(
-                self.browser, self.humanizer, self.risk, self.db, self.config
-            ).run(count=follows, platform=platform, keyword=keyword)
-            results["follow"] = result
+            def _comment() -> dict:
+                return Commenter(
+                    self.browser, self.humanizer, self.risk, self.db, self.config
+                ).run(count=comments, platform=platform, keyword=comment_keyword)
+
+            run_step("comment", _comment)
+            results["comment_keyword"] = comment_keyword
 
         if actions.get("post"):
-            result = Poster(
-                self.browser, self.humanizer, self.risk, self.db, self.config
-            ).run_pending(max_tasks=1)
-            results["post"] = result
 
+            def _post() -> dict:
+                return Poster(
+                    self.browser, self.humanizer, self.risk, self.db, self.config
+                ).run_pending(max_tasks=1)
+
+            run_step("post", _post)
+
+        if errors:
+            results["errors"] = errors
         return results
 
     def tick(self, platform: str, force: bool = False) -> dict:
@@ -320,9 +373,27 @@ class Scheduler:
             self.db.mark_session(session["id"], "running")
             try:
                 results = self._execute(platform, session)
-                self.db.mark_session(session["id"], "done")
+                status = session_status(results)
+                self.db.mark_session(session["id"], status)
+                # 把「这个时段到底做成了什么」落一条日志：
+                # 以后核查不用再靠翻一堆分散的 action 日志拼图。
+                self.db.log(
+                    platform,
+                    "session",
+                    status,
+                    {
+                        "planned_at": session.get("planned_at"),
+                        "actions": _as_dict(session.get("actions")),
+                        "results": results,
+                    },
+                )
                 executed.append(
-                    {"id": session["id"], "planned_at": session["planned_at"], "results": results}
+                    {
+                        "id": session["id"],
+                        "planned_at": session["planned_at"],
+                        "status": status,
+                        "results": results,
+                    }
                 )
             except CircuitBreakerTripped as exc:
                 self.db.mark_session(session["id"], "failed")
