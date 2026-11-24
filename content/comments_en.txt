@@ -19,6 +19,14 @@
 [supply] We had a customs hold last spring because the HS code differed between the invoice and the packing list. Three weeks lost over one line.
 [supply,hook] The last mile at the destination port is where we lose the most time. Our forwarder has a local partner we trust; I can pass the arrangement along if useful.
 [supply] Anyone consolidating LCL cargo from two suppliers into one container? We are considering it and worried about damage in transit.
+[supply] We track demurrage separately now. Two containers stuck a week cost more than the freight difference we were chasing.
+[supply,hook] Do you use a forwarder who can handle DDP into the EU? Ours is honest but slow on paperwork; happy to compare notes on who gets customs right.
+[supply] Railing and edge protection eat container space. Nobody budgets for that until the first damaged shipment.
+[supply] What is your rule for splitting a shipment across two vessels when timing is tight?
+[supply] We switched to 40HQ for bulky items. Cheaper per cubic metre, but the loading plan has to be right.
+[supply] Incoterms matter more than people think on claims. FOB hands you risk you may not want to carry.
+[supply] How do you handle shipping during the National Day week? The ports slow down more than the calendar shows.
+[supply] A third party inspection before loading saved us from a bad batch last quarter. A few hundred dollars against a container.
 
 # ---------- quality ----------
 [quality] Keeping standards consistent across multiple factories is the hardest part of QC.
@@ -33,6 +41,14 @@
 [quality] Do you audit sub-suppliers yourself or rely on their certificates? We started annual visits and it changed our view of them.
 [quality] The hardest defect to catch is the one that only shows up after installation. Water ingress on a shower tray is a good example.
 [quality,hook] We keep a photo record per batch so containers can be compared later. If the folder structure we use would help, message me and I will send it.
+[quality] We hold finished goods for three days before packing. It catches the defects that only show after the coating fully cures.
+[quality] What is your acceptance rule for a minor scratch on a glossy panel? We keep arguing with one customer about what counts as minor.
+[quality] Labelling is underrated QC. Wrong SKU labels on the carton cost more to fix than most production defects.
+[quality,hook] We built a one page defect photo guide per product line so every inspector grades the same way; happy to send the format if it helps.
+[quality] Do you leak test every piece or by batch? Ours is 100% on shower trays and it is expensive.
+[quality] Packaging is part of quality. If the carton fails, the product does not matter to the buyer.
+[quality] We measure first pass yield weekly. It moved more when we fixed the paint booth than when we added inspectors.
+[quality] How do you handle field returns when the defect is cosmetic? We are still improvising on that one.
 
 # ---------- cost / pricing ----------
 [cost] Raw material swings hit us harder than labor cost these days.
@@ -47,6 +63,14 @@
 [cost] The cheapest cartridge is never the cheapest decision. Replacement batches cost more than the difference ever saved.
 [cost,hook] We quote two versions now, standard and value engineered, with the trade offs written down. Buyers choose faster when they can see what they are giving up.
 [cost,hook] If it is useful, I can send over the landed cost breakdown we use for a 40HQ container. Not complicated, just rarely done.
+[cost] We quote in USD but buy some components in EUR. Hedging is a line item now, not an afterthought.
+[cost] Minimum order quantity is a hidden cost driver. Nobody puts the setup time on the quote.
+[cost,hook] Do you charge tooling up front or amortise it into the unit price? We switched to up front and the conversation got clearer; happy to explain why.
+[cost] Freight and duty are easy to see. The cost of a delayed container is not on any invoice but it is real.
+[cost] How do you price spare parts and after sales? It changes the margin profile more than the product price does.
+[cost] The cheapest supplier we ever used cost us the most in year two. Reputation damage does not show up in a spreadsheet.
+[cost] What is your rule on price when steel moves 15%? We put a formula in the contract after getting burned twice.
+[cost] Payment terms are part of cost. Thirty extra days is roughly 1% of the order, and most buyers do not price that in.
 
 # ---------- delivery / lead time ----------
 [delivery] Scheduling flexibility matters more than raw capacity when it comes to lead times.
@@ -61,6 +85,14 @@
 [delivery] On time delivery looks good on paper until you count partial shipments. A 92% rate can still mean every order was late.
 [delivery,hook] We cut four days off lead time just by pre staging packaging before the final production run. Happy to explain the sequencing.
 [delivery] Does anyone buffer with safety stock at the destination instead of adding lead time at the factory? We are weighing both.
+[delivery] We publish a capacity calendar to key customers monthly. It ends the "are you full in June" email thread.
+[delivery] What is your buffer between production finish and vessel departure? Ours is seven days and it still gets eaten.
+[delivery,hook] Our biggest lead time gain came from batching the same finish colour across orders. Happy to explain the scheduling change if you are fighting the same thing.
+[delivery] A lead time quote should say what is excluded. Ours now lists the three things that stop the clock.
+[delivery] How do you handle a customer who changes the order after production has started?
+[delivery] We track late starts, not just late finishes. Most delays were visible a week before they became delays.
+[delivery] Do you use a third party warehouse for consolidation? It adds a week but cuts damage and simplifies receiving.
+[delivery] The factory can be on time and the order still late. Missing documents at destination is the quiet cause.
 
 # ---------- market / customers ----------
 [market] Demand in Europe and the US is moving fast. Which signals are you watching?
@@ -75,6 +107,14 @@
 [market] Hotel and multifamily projects move slowly but repeat. Trade buyers move fast and disappear. Different pipelines, different pricing.
 [market,hook] We stopped attending the big general fairs and put the budget into two focused ones. Message me if you want the list we ended up with.
 [market] Is anyone seeing more local assembly requirements in Europe? It is coming up in tenders more often for us.
+[market] Buyers now ask for samples of three products instead of one. It changes what a "sample order" is supposed to do.
+[market] What channels are actually working for you this year? Ours shifted hard from fairs to referrals.
+[market,hook] We send a short monthly note to existing customers about new finishes and it gets more replies than any campaign we ran; happy to share the format.
+[market] Private label demand is up, but so is the expectation on packaging and branding support.
+[market] Are buyers asking for Chinese brands by name yet, or still pushing for a European label on the box?
+[market] The Middle East looks strong for us but the payment terms are tougher. How do you balance the two?
+[market] Buyer behaviour changed. They want the spec sheet, the certificate and the price in the first email now.
+[market] Which market gave you the best repeat rate last year? For us it was the smaller distributors, not the big importers.
 
 # ---------- production / manufacturing ----------
 [production] What payback period are you seeing on line automation? We are evaluating it now.
@@ -89,6 +129,14 @@
 [production] Mould maintenance is the silent capacity killer. Two weeks of unplanned downtime taught us to track shots per mould.
 [production,hook] We now run a short pre production meeting before every new model. Twenty minutes, saves days; I can share the checklist.
 [production] Does anyone else struggle with holding area space? Our WIP eats more floor than the machines do.
+[production] We keep the same model on two shifts to protect the learning curve. Splitting it across lines looked efficient and was not.
+[production] What is your scrap rate on first article runs? Ours is high and we stopped hiding it in the quote.
+[production,hook] Our biggest yield gain came from a ten minute end of shift check sheet, not new equipment. Happy to share what is on it.
+[production] How do you take a rush order without breaking the sequence for everyone else?
+[production] Buy the sub assembly or make it in house is a capacity decision, not only a cost one.
+[production] We track downtime reasons by station now. The top reason was not what anyone guessed.
+[production] Do you keep a dedicated sample line? It protects the schedule but it also hides real capacity.
+[production] Hiring is the real constraint in our area. Training takes longer than installing a machine.
 
 # ---------- digital / automation ----------
 [digital] The hard part of digitalization is not the system, it is getting people to actually use the data.
@@ -103,6 +151,14 @@
 [digital] We tried an AI inspection pilot on glaze defects. It was good at the obvious ones and useless on borderline shade.
 [digital,hook] The metric that changed our behaviour was first pass yield per line, shown daily. Happy to share how we report it.
 [digital] Does anyone actually use their ERP quality module, or does it end up as a paper trail in a spreadsheet?
+[digital] We put a screen on the packing line showing today's containers. Simple, but the mislabels dropped fast.
+[digital] What do you use for quote calculation? Ours is still a spreadsheet and it is becoming the bottleneck.
+[digital,hook] The one automation that paid off immediately was barcode scanning at outbound. Happy to walk through what it took to set up.
+[digital] Most of our "AI" is rules plus a good photo library. It works, and it is explainable to the team.
+[digital] How do you keep product data consistent between the catalogue, the website and the ERP?
+[digital] We built a customer portal. Buyers used it for shipping status and ignored everything else.
+[digital] Data quality beats data volume. Half our reporting problems were duplicate SKU codes.
+[digital] Is anyone integrating the forwarder tracking into their own system, or is it still copy and paste every morning?
 
 # ---------- general ----------
 This is a practical view. The operational detail matters more than the theory.
@@ -111,3 +167,7 @@ Curious whether this approach still holds for smaller teams?
 Agreed, execution detail is where most of it gets decided.
 Fair point, though the answer probably differs by company size.
 Thanks for sharing. First hand experience like this is more useful than most industry reports.
+We ran into the same thing last year and solved it with a checklist, not a system.
+How long did it take before you saw a difference in the numbers?
+In my experience the constraint usually turns out to be people, not tools.
+Would be interested in the figures behind this if you have them.
