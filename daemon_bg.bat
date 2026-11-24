@@ -1,17 +1,23 @@
 @echo off
-rem Background daemon for LinkedIn automation (ASCII only - do not add Chinese here)
-rem Supervisor loop: if the daemon crashes, restart it after ~30s instead of dying silently.
+rem Background daemon supervisor for LinkedIn automation.
+rem Keep this file ASCII-only and CRLF: cmd.exe needs CRLF line endings.
+rem Encoding is left to the console default (GBK on Chinese Windows), which renders the
+rem Chinese output of main.py correctly. Do not force chcp here.
 cd /d "%~dp0"
-rem Python: env var SOCIAL_AUTO_PY > project .venv > python on PATH
-set "PY=%SOCIAL_AUTO_PY%"
-if not defined PY if exist "%~dp0.venv\Scripts\python.exe" set "PY=%~dp0.venv\Scripts\python.exe"
-if not defined PY set "PY=python"
-if not exist "data\logs" mkdir "data\logs"
-:loop
-echo. >> "data\logs\daemon.log"
-echo ===== start %DATE% %TIME% ===== >> "data\logs\daemon.log"
-"%PY%" main.py daemon >> "data\logs\daemon.log" 2>&1
-echo ===== exit %DATE% %TIME% - restarting in 30s ===== >> "data\logs\daemon.log"
-rem use ping instead of timeout: works even when PATH is polluted by Git/MSYS
-ping -n 31 127.0.0.1 >nul
-goto loop
+set "PY=%~dp0.venv\Scripts\python.exe"
+if not exist "%PY%" (
+    echo Python venv not found: %PY%
+    echo Fix: python -m venv .venv  then  .venv\Scripts\pip install -r requirements.txt
+    pause
+    exit /b 1
+)
+:start
+echo.
+echo ==== LinkedIn daemon (supervised) ====
+echo Started: %DATE% %TIME%
+echo Close this window to stop it.
+"%PY%" main.py daemon
+echo.
+echo Daemon exited at %DATE% %TIME%. Restarting in 30s, Ctrl+C to stop.
+timeout /t 30 /nobreak >nul
+goto start
