@@ -378,6 +378,9 @@ class Commenter:
         try:
             page = self.browser.page(platform, target)
             self.risk.check_page(page, platform)
+            # 软限流（"发得太快 / 评论到上限"）与硬风控分开扫，
+            # 任何一边命中都会抛 CircuitBreakerTripped，这里统一拦下
+            self.risk.check_soft_limit(page, platform)
         except CircuitBreakerTripped as exc:
             result["error"] = str(exc)
             return result

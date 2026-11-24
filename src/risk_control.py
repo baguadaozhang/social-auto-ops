@@ -192,6 +192,61 @@ class RiskController:
                 self.trip(platform, kw)
                 return
 
+    # 软性限流的提示区域：领英的"发得太快 / 评论到上限"通常出现在
+    # 编辑器旁的 inline feedback、页面 banner 或 toast 里，与验证码那类硬信号分开扫。
+    _SOFT_SIGNAL_SELECTORS = [
+        "div[aria-live='assertive']",
+        "div[aria-live='polite']",
+        "[class*='inline-feedback']",
+        "[role='alert']",
+        ".artdeco-toast-item",
+        "[class*='error'][role='presentation']",
+    ]
+    # 出现这些文案说明已经触到频率限制（中英双语，均为小写匹配）
+    _SOFT_LIMIT_PHRASES = (
+        "you're posting too fast",
+        "you are posting too fast",
+        "posting too fast",
+        "comment limit",
+        "too many comments",
+        "too many actions",
+        "reached the limit",
+        "try again later",
+        "temporarily restricted",
+        "评论过于频繁",
+        "操作过于频繁",
+        "评论数量已达上限",
+        "稍后再试",
+    )
+
+    def check_soft_limit(self, page: "Page", platform: str) -> None:
+        """扫描软性限流提示，命中即熔断（冷却时长复用 cooldown_hours）。
+
+        与 check_page 的分工：
+        - check_page 抓"验证码 / 账号受限"，那是已经出事；
+        - 这里抓"发得太快 / 评论到上限"，那是还没出事但方向不对，
+          继续操作才会被真正限制，所以命中就停一天。
+        只扫反馈类容器，不扫整页正文——普通帖子提到 "try again later"
+        不应该让账号停摆一整天。
+        """
+        texts: list[str] = []
+        for selector in self._SOFT_SIGNAL_SELECTORS:
+            try:
+                locator = page.locator(selector)
+                count = min(locator.count(), 3)
+                for i in range(count):
+                    content = locator.nth(i).inner_text(timeout=800) or ""
+                    if content.strip():
+                        texts.append(content)
+            except Exception:
+                continue
+        if not texts:
+            return
+        blob = "\n".join(texts).lower()
+        for phrase in self._SOFT_LIMIT_PHRASES:
+            if phrase in blob:
+                self.trip(platform, f"软限流提示: {phrase}")
+
     def trip(self, platform: str, reason: str) -> None:
         """触发熔断：标记账号状态 + 设置冷却截止时间。"""
         hours = int(self.config.get("circuit_breaker.cooldown_hours", 24))

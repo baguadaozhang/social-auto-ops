@@ -62,6 +62,19 @@ CREATE TABLE IF NOT EXISTS human_todos (
     completed_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS leads (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform      TEXT NOT NULL,
+    author        TEXT NOT NULL DEFAULT '',
+    author_url    TEXT NOT NULL DEFAULT '',
+    post_url      TEXT NOT NULL DEFAULT '',
+    comment_text  TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL,
+    replied       INTEGER NOT NULL DEFAULT 0,
+    liked         INTEGER NOT NULL DEFAULT 0,
+    follow_up     TEXT NOT NULL DEFAULT 'new'
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     platform    TEXT NOT NULL,
@@ -81,6 +94,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, run_at);
 CREATE INDEX IF NOT EXISTS idx_logs_created ON logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_todos_status ON human_todos(status);
 CREATE INDEX IF NOT EXISTS idx_sessions_plan ON sessions(platform, date, status);
+CREATE INDEX IF NOT EXISTS idx_leads_created ON leads(created_at);
 """
 
 
@@ -318,6 +332,45 @@ class Database:
 
     def account_status(self, platform: str) -> dict:
         return self.ensure_account(platform)
+
+    # ---------- 线索 ----------
+    def add_lead(
+        self,
+        platform: str,
+        author: str,
+        author_url: str,
+        post_url: str,
+        comment_text: str,
+    ) -> int:
+        """记录一条"我评论了谁"的线索，供后续跟进与统计。
+
+        评论是获客动作，但评论本身不会自动变成客户——把「对方是谁、
+        哪条帖子、我说了什么」记下来，才有后面"有没有回复、要不要跟进"。
+        """
+        with self.session() as conn:
+            cur = conn.execute(
+                """INSERT INTO leads
+                   (platform, author, author_url, post_url, comment_text, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (platform, author, author_url, post_url, comment_text, now_iso()),
+            )
+            return int(cur.lastrowid)
+
+    def count_leads(self, days: int = 7) -> int:
+        """最近 N 天新增线索数（`main.py status` 的"本周线索数"）。"""
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
+        with self.session() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM leads WHERE created_at >= ?", (cutoff,)
+            ).fetchone()
+        return int(row["n"]) if row else 0
+
+    def recent_leads(self, limit: int = 20) -> list[dict]:
+        with self.session() as conn:
+            rows = conn.execute(
+                "SELECT * FROM leads ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     # ---------- 元数据 ----------
     def get_meta(self, key: str, default: str | None = None) -> str | None:

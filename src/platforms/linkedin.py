@@ -271,6 +271,109 @@ class LinkedInPlatform(BasePlatform):
             pass
         return None
 
+    def _open_comment_editor(self, page, card, index: int):
+        """展开并返回评论编辑器；已展开则直接复用（再点一次会把它收起）。"""
+        editor = self._first_in(card, _COMMENT_EDITOR_SELECTORS)
+        if editor is not None:
+            return editor
+        btn = self._first_in(card, _COMMENT_BTN_SELECTORS)
+        if btn is None:
+            return None
+        self.humanizer.human_click(btn)
+        page_wait(page, 2200)
+        editor = self._first_in(card, _COMMENT_EDITOR_SELECTORS)
+        if editor is None:
+            # 有些版式下评论框渲染在卡片容器之外，兜底时找"离当前卡片最近"的编辑器，
+            # 避免选到上一条帖子的残留评论框
+            editor = self._editor_near_card(page, card)
+        return editor
+
+    def _click_comment_submit(self, page, card, editor) -> bool:
+        """点提交：卡片内按钮 → 从当前编辑器向上找就近按钮 → 就近编辑器兜底。"""
+        submit = self._first_in(card, _COMMENT_SUBMIT_SELECTORS)
+        if submit is not None:
+            self.humanizer.human_click(submit)
+            return True
+        point = None
+        try:
+            point = editor.evaluate(_COMMENT_SUBMIT_POINT_JS)
+        except Exception:
+            point = None
+        if not point:
+            near = self._editor_near_card(page, card) or editor
+            try:
+                point = near.evaluate(_COMMENT_SUBMIT_POINT_JS)
+            except Exception:
+                point = None
+        if not point:
+            return False
+        self.humanizer.move_mouse_to(page, point["x"], point["y"])
+        self.humanizer.micro_pause()
+        page.mouse.click(point["x"], point["y"])
+        return True
+
+    def _wait_comment_visible(
+        self, page, card, head: str, timeout_s: float = 8.0
+    ) -> bool:
+        """提交后等 2-4 秒，回读评论区确认自己的评论已经出现。
+
+        只等 2 秒就判失败会误判（懒加载 / 网络慢），所以先在 2-4 秒处看一眼，
+        没出现再继续轮询到 timeout；
+        仍没出现才交给调用方决定重试还是记失败。
+        """
+        page_wait(page, 3000, jitter=0.34)  # 2000~4000ms
+        deadline = time.monotonic() + timeout_s
+        while True:
+            if head:
+                try:
+                    if head in card.inner_text():
+                        return True
+                except Exception:
+                    pass
+            if time.monotonic() >= deadline:
+                return False
+            page_wait(page, 900, jitter=0.25)
+
+    _AUTHOR_JS = """
+    (el) => {
+      const sels = [
+        ".update-components-actor a[href*='/in/']",
+        "a[data-test-id*='actor']",
+        "a[href*='/in/']",
+      ];
+      for (const sel of sels) {
+        for (const a of el.querySelectorAll(sel)) {
+          const href = a.href || "";
+          if (!href.includes("/in/")) continue;
+          const name = (a.innerText || "").trim().split("\\n")[0];
+          if (name) return {name: name, url: href.split("?")[0]};
+        }
+      }
+      return null;
+    }
+    """
+
+    def _record_lead(self, page, card, index: int, text: str) -> None:
+        """评论成功后记一条线索：评论了谁、在哪条帖子下、说了什么。
+
+        取不到昵称或主页也照记（字段留空），至少有帖子链接可以回看；
+        记录失败不能影响评论结果，所以整体包在 try 里。
+        """
+        try:
+            author = card.evaluate(self._AUTHOR_JS) or {}
+        except Exception:
+            author = {}
+        try:
+            self.db.add_lead(
+                self.name,
+                str(author.get("name") or "").strip(),
+                str(author.get("url") or "").strip(),
+                self.card_permalink(page, index),
+                text,
+            )
+        except Exception:
+            pass
+
     def comment_on_card(
         self, page, index: int, text: str, base_text: str | None = None
     ) -> dict:
@@ -291,112 +394,83 @@ class LinkedInPlatform(BasePlatform):
             except Exception:
                 pass
 
-            # 评论框可能已展开，避免重复点击把它收起
-            editor = self._first_in(card, _COMMENT_EDITOR_SELECTORS)
+            editor = self._open_comment_editor(page, card, index)
             if editor is None:
-                btn = self._first_in(card, _COMMENT_BTN_SELECTORS)
-                if btn is None:
+                # 区分"没有评论按钮"和"有按钮但没弹出编辑器"，方便排查页面改版
+                if self._first_in(card, _COMMENT_BTN_SELECTORS) is None:
                     self.debug_shot(page, f"no_comment_btn_{index}")
                     return {"success": False, "error": "未找到评论按钮"}
-                self.humanizer.human_click(btn)
-                page_wait(page, 2200)
-                editor = self._first_in(card, _COMMENT_EDITOR_SELECTORS)
-                # 有些版式下评论框渲染在卡片容器之外，
-                # 兜底时找"离当前卡片最近"的编辑器，避免选到上一条帖子的残留评论框
-                if editor is None:
-                    editor = self._editor_near_card(page, card)
-            if editor is None:
                 self.debug_shot(page, f"no_comment_editor_{index}")
                 return {"success": False, "error": "未找到评论输入框"}
 
-            # 拟真输入
-            self.humanizer.human_type(editor, text)
-            self.humanizer.pause_before_submit()
-
-            # 提交：卡片内 → 从当前编辑器向上找就近按钮 → 就近编辑器兜底
-            submit = self._first_in(card, _COMMENT_SUBMIT_SELECTORS)
-            if submit is not None:
-                self.humanizer.human_click(submit)
-            else:
-                point = None
-                try:
-                    point = editor.evaluate(_COMMENT_SUBMIT_POINT_JS)
-                except Exception:
-                    point = None
-                if point:
-                    self.humanizer.move_mouse_to(page, point["x"], point["y"])
-                    self.humanizer.micro_pause()
-                    page.mouse.click(point["x"], point["y"])
-                else:
-                    near = self._editor_near_card(page, card) or editor
-                    try:
-                        point = near.evaluate(_COMMENT_SUBMIT_POINT_JS)
-                    except Exception:
-                        point = None
-                    if point:
-                        self.humanizer.move_mouse_to(page, point["x"], point["y"])
-                        self.humanizer.micro_pause()
-                        page.mouse.click(point["x"], point["y"])
-                    else:
-                        self.debug_shot(page, f"no_comment_submit_{index}")
-                        return {"success": False, "error": "未找到评论提交按钮"}
-
-            # 校验：轮询最多 ~10 秒（固定 2.8 秒在网络慢/懒加载时会误判失败，
-            # 误判失败 → 配额漏记 + 下次对同一帖子重复评论，是最伤账号的行为）。
-            # 先确认编辑框已清空（未清空 = 根本没提交）；
-            # 编辑器随提交消失（抛异常）也算清空。
             head = text.strip()[:12]
-            cleared = False
-            shown = False
-            deadline = time.monotonic() + 10.0
-            # 提交后编辑器清空是异步的：网络慢时不会瞬间清空。
-            # 给清空一个短宽限再判失败，避免误判失败 → 配额漏记 → 二次重复评论。
-            clear_deadline = time.monotonic() + 3.0
-            while time.monotonic() < deadline:
-                if not cleared:
+            visible = False
+            reason = ""
+
+            # P0：提交后必须回读评论区确认评论真的出现。
+            # 只信"编辑框清空"不够——11-23 出现过 3 次提交后静默失败
+            # （截图 linkedin_no_comment_*）。那种失败一旦计了配额、进了去重表，
+            # 下次对同一帖子重发才是真正伤账号的行为。
+            for attempt in (1, 2):
+                if attempt == 2:
+                    # 第一次回读没看到：重新打开编辑器，整段重来一次
+                    editor = self._open_comment_editor(page, card, index)
+                    if editor is None:
+                        reason = "重试时未找到评论输入框"
+                        break
                     try:
-                        cleared = (editor.inner_text() or "").strip() == ""
-                    except Exception:
-                        cleared = True  # 编辑器已随提交从 DOM 消失
-                    if not cleared:
-                        if time.monotonic() >= clear_deadline:
-                            break  # 宽限到期仍未清空，判定未提交
-                        page_wait(page, 600, jitter=0.25)
-                        continue
-                if cleared:
-                    try:
-                        if head and head in card.inner_text():
-                            shown = True
-                            break
+                        editor.fill("")  # 清掉可能残留的草稿，避免叠加输入
                     except Exception:
                         pass
-                page_wait(page, 900, jitter=0.25)
 
-            if not cleared:
-                self.debug_shot(page, f"comment_not_submitted_{index}")
-                return {"success": False, "error": "点击提交后评论框未清空，评论未发出"}
+                self.humanizer.human_type(editor, text)
+                self.humanizer.pause_before_submit()
+                if not self._click_comment_submit(page, card, editor):
+                    reason = "未找到评论提交按钮"
+                    continue
 
-            preview = ""
-            try:
-                preview = card.inner_text()[:60]
-            except Exception:
-                pass
+                # 提交后等 2-4 秒回读评论区；没出现先继续轮询，仍没有才判失败
+                if self._wait_comment_visible(page, card, head):
+                    visible = True
+                    break
 
-            if not shown:
-                # 编辑框已清空但没在页面上看到评论：大概率已发出、只是渲染慢。
-                # 记为 uncertain——计配额、写入去重日志，宁可少发不可重发。
-                self.db.increment_quota(self.name, "comment")
+                cleared = True
+                try:
+                    cleared = (editor.inner_text() or "").strip() == ""
+                except Exception:
+                    cleared = True  # 编辑器已随提交从 DOM 消失
+                reason = (
+                    "提交后评论区未出现该评论"
+                    if cleared
+                    else "点击提交后评论框未清空"
+                )
+
+            if not visible:
+                shot = self.debug_shot(page, f"comment_not_visible_{index}")
                 self.db.log(
-                    self.name, "comment", "uncertain",
+                    self.name, "comment", "verify_failed",
                     {
                         "text": text,
                         "base_text": base_text or text,
-                        "preview": preview,
-                        "note": "编辑框已清空但未确认渲染，按已发出处理",
+                        "reason": reason,
+                        "attempts": 2,
+                        "screenshot": shot,
+                        "note": "提交后 2-4 秒回读评论区未见到该评论，重试 1 次仍失败；不计配额",
                     },
                 )
-                return {"success": True, "uncertain": True, "text": text}
+                # 软限制：两次都没在评论区看到自己的评论，按"疑似限流"处理，
+                # 复用 24 小时冷却——继续发只会更快触到硬限制。
+                try:
+                    self.risk.trip(self.name, "评论提交后不可见（疑似限流）")
+                except CircuitBreakerTripped:
+                    pass
+                return {
+                    "success": False,
+                    "error": f"评论未确认发出：{reason}",
+                    "screenshot": shot,
+                }
 
+            # 只有回读确认过，才计配额、写成功日志、记一条线索
             self.db.increment_quota(self.name, "comment")
             # base_text 存原句，去重时比对原句而不是加了变体的最终文本
             self.db.log(
@@ -404,10 +478,11 @@ class LinkedInPlatform(BasePlatform):
                 {
                     "text": text,
                     "base_text": base_text or text,
-                    "preview": preview,
+                    "verified": True,
                 },
             )
-            return {"success": True, "text": text}
+            self._record_lead(page, card, index, text)
+            return {"success": True, "text": text, "verified": True}
 
         except CircuitBreakerTripped as exc:
             return {"success": False, "error": str(exc)}

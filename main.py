@@ -191,6 +191,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  熔断至    : {state.get('circuit_break_until') or '无'}")
             print(f"  待执行任务: {pending_by_platform.get(platform, 0)}")
             print(f"  人工待办  : {db.pending_todo_count(platform, 'post')}")
+        print(f"\n本周线索数: {db.count_leads(days=7)}")
         print("\n最近操作日志：")
         for log in db.recent_logs(10):
             print(f"  #{log['id']} {log['created_at']} {log['platform']} "
