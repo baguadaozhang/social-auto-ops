@@ -383,6 +383,27 @@ class LinkedInPlatform(BasePlatform):
     }
     """
 
+    _ACTOR_JS = """
+    (el) => {
+      // 关注的到底是"人"还是"公司"，必须记下来。
+      // 2026-11-24 14:32 关注了一条 "Pure Charming"，URL 和度数都是空的——
+      // 因为公司页的链接是 /company/，而 _AUTHOR_JS 只认 /in/。
+      // 结果就是"关注了谁"无法追溯，等于审计断链。
+      const pick = (sel, kind) => {
+        for (const a of el.querySelectorAll(sel)) {
+          const href = a.href || "";
+          if (!href) continue;
+          const text = (a.innerText || "").trim();
+          if (text) return { name: text, url: href.split("?")[0], kind: kind };
+        }
+        return null;
+      };
+      return pick("a[href*='/in/']", "person")
+          || pick("a[href*='/company/']", "company")
+          || pick("a[href*='/school/']", "school");
+    }
+    """
+
     def _record_lead(self, page, card, index: int, text: str) -> None:
         """评论成功后记一条线索：评论了谁、在哪条帖子下、说了什么。
 
@@ -647,22 +668,34 @@ class LinkedInPlatform(BasePlatform):
 
             url = ""
             degree = 0
+            kind = ""
+            name = ""
             try:
-                author = card.evaluate(self._AUTHOR_JS) or {}
-                url = str(author.get("url") or "")
+                actor = card.evaluate(self._ACTOR_JS) or {}
+                url = str(actor.get("url") or "")
+                kind = str(actor.get("kind") or "")
+                name = str(actor.get("name") or "").splitlines()[0].strip() if actor.get("name") else ""
             except Exception:
                 pass
-            try:
-                degree = int(card.evaluate(self._DEGREE_JS) or 0)
-            except Exception:
-                degree = 0
+            if kind == "person":
+                try:
+                    degree = int(card.evaluate(self._DEGREE_JS) or 0)
+                except Exception:
+                    degree = 0
 
             self.db.increment_quota(self.name, "follow")
             self.db.log(
                 self.name, "follow", "success",
-                {"target": label, "url": url, "degree": degree},
+                {"target": label, "url": url, "degree": degree, "kind": kind, "author": name},
             )
-            return {"success": True, "target": label, "url": url, "degree": degree}
+            return {
+                "success": True,
+                "target": label,
+                "url": url,
+                "degree": degree,
+                "kind": kind,
+                "author": name,
+            }
 
         except CircuitBreakerTripped as exc:
             return {"success": False, "error": str(exc)}
