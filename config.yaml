@@ -1,0 +1,191 @@
+# 社媒自动化运营 - 配置文件
+# 修改后无需改代码，重启命令即可生效
+
+browser:
+  # 有头模式必须保持 true，无头模式极易被风控识别
+  headless: false
+  # 浏览器内核：chrome / msedge 用系统已装的浏览器（不用下载）；
+  # 留空则用 Playwright 自带 chromium（需先 playwright install chromium）
+  channel: "chrome"
+  # persistent = Playwright 自己启动、脚本结束后关闭浏览器
+  # cdp        = 拉起一个常驻 Chrome，脚本只接入，任务结束后浏览器继续开着
+  mode: "cdp"
+  # CDP 模式下各平台使用的调试端口，互不冲突
+  debug_ports:
+    linkedin: 9222
+    facebook: 9223
+  # Chrome 可执行文件路径；留空自动探测
+  executable: ""
+  # 每个平台独立 profile，避免操作交叉
+  profiles:
+    linkedin: "./profiles/linkedin"
+    facebook: "./profiles/facebook"
+  # 页面加载超时（毫秒）
+  timeout_ms: 30000
+
+# 每日配额 - 用完即停，绝不硬上
+quota:
+  linkedin:
+    post: 2
+    comment: 15
+    follow: 20
+  facebook:
+    post: 2
+    comment: 12
+    follow: 12
+
+# 活跃时间窗口（本地时间，24 小时制）
+time_window:
+  enabled: true
+  weekdays_only: true
+  windows:
+    - "09:00-11:30"
+    - "14:00-17:30"
+  # 这是"允许操作"的兜底判断，前后各放宽多少分钟
+  # （真正的随机作息时间由下面的 schedule 段生成，不是靠这个抖动）
+  jitter_minutes: 40
+  # 周末配额自动减半
+  weekend_multiplier: 0.5
+
+# 行为拟真层 - 第一版核心
+humanize:
+  enabled: true
+  # 总体强度 0.0-1.0，越高越像人但越慢
+  intensity: 0.8
+  # 会话热身
+  warmup:
+    enabled: true
+    scroll_screens_min: 2
+    scroll_screens_max: 4
+    pause_min_s: 15
+    pause_max_s: 60
+    unrelated_click_probability: 0.3
+  # 阅读时长：字数 ÷ reading_chars_per_second ± 抖动
+  reading_chars_per_second: 15
+  reading_jitter: 0.4
+  # 输入拟真
+  typing:
+    min_delay_ms: 60
+    max_delay_ms: 280
+    typo_probability: 0.08
+  # 每段任务之间随机发呆 1-5 分钟
+  idle_between_tasks_min_s: 60
+  idle_between_tasks_max_s: 300
+  # 每天纯浏览时段（无互动）
+  idle_browse_minutes: 5
+
+# 人工介入
+human_intervention:
+  # 人工占比 20-30%
+  human_ratio: 0.25
+  # 高危动作需要人工确认（发帖/首次关注）
+  confirm_before_post: true
+  confirm_before_first_follow: true
+  # 约每 N 次自动操作随机接管 1 次（每次 1/N 概率，不是逢 N 必接管）
+  takeover_every_n: 10
+
+# 熔断关键词 - 页面出现这些文字立即停机
+circuit_breaker:
+  keywords:
+    - "验证码"
+    - "verify you are human"
+    - "account restricted"
+    - "账号受限"
+    - "unusual activity"
+    - "异常活动"
+  # 熔断后冷却时长（小时）
+  cooldown_hours: 24
+
+# 存储路径
+storage:
+  database: "./data/social.db"
+  content_dir: "./content"
+  logs_dir: "./data/logs"
+  # 失败时的诊断截图目录
+  debug_dir: "./data/debug"
+
+run:
+  # 每次 run 每平台最多发几条；设大于 1 会让同平台连发，封号风险明显上升
+  max_posts_per_platform_per_run: 1
+
+comment:
+  # 评论里出现"人为小瑕疵"的概率（拼写/同音字手误 / 标点疏忽 / 口语填充词）
+  # 领英是职业场景，错字比日常聊天少见，建议 0.05-0.1，不要调高
+  imperfection_probability: 0.08
+  # 主语言：评论语言跟随帖子语言，读不到正文时用这个
+  # 客户主要是外国人，所以默认英文
+  primary_language: "en"
+  # 只评论跟自己行业话题相关的帖子（supply/quality/cost/delivery/market/production/digital）
+  # 关掉会去评论无关帖子（如生活、创意类），容易显得莫名其妙
+  require_topic_match: true
+
+# 随机日程：模拟真人的不规律作息，而不是固定时间
+schedule:
+  # 每天几个活跃时段（随机区间）
+  sessions_per_day: [2, 4]
+  # 两个时段之间至少间隔多少分钟（随机区间）
+  session_gap_minutes: [90, 240]
+  # 整天空窗的概率（真人也有今天不上的时候）
+  skip_day_probability: 0.1
+  # 错过超过多少分钟就作废，不补做
+  grace_minutes: 45
+  # 每个时段纯浏览的时长（分钟，随机区间）
+  browse_minutes: [2, 6]
+  # 这个时段会不会顺手评论
+  comment_probability: 0.55
+  # 评论条数（随机区间）
+  comments_per_session: [1, 2]
+  # 队列里有稿子时，这个时段会不会顺手发
+  post_probability: 0.35
+  # 顺带做点不产生内容的动作（展开长文/看通知/随便滚）的概率
+  extra_activity_probability: 0.5
+
+  # 自动评论时按这些关键词搜帖子（每次随机挑一个）
+  # 留空则只看信息流——但信息流里大多是不相关的，容易被话题过滤筛掉
+  # 产品线：卫浴洁具；目标客户：OEM/ODM 品牌方、进口商/分销商、酒店工程项目
+  # 注意：直接搜产品名（faucet）几乎搜不到帖子，要搜"讨论场景"词
+  # 全部实测过（2026-11-23），括号里是"前 3 条帖子里有几条值得评论"
+  # 定期用 `python main.py keywords` 复检，失效的换掉
+  comment_keywords:
+    # —— 行业 / 产品 ——
+    - "sanitary ware"           # 1/3  行业标准叫法，搜索量最大
+    - "bathroom fittings"       # 3/3
+    - "bathroom manufacturer"   # 2/3  同行与买家都在这聊产能交期
+    - "shower system"           # 3/3
+    - "bathroom vanity"         # 3/3  浴室柜，你的主力品类之一
+    # —— 采购 / 供应链视角（买家的语言）——
+    - "sanitary ware supplier"  # 3/3
+    - "bathroom supplier"       # 2/3
+    - "bathroom distributor"    # 3/3  直接对准进口商/分销商
+    - "bathroom sourcing"       # 2/3
+    - "private label bathroom"  # 2/3  OEM/ODM 品牌方
+    - "bathroom OEM"            # 2/3
+    - "plumbing supplier"       # 3/3
+    - "supplier quality"        # 3/3  泛指但命中率高
+    - "import from China"       # 3/3  买家最常挂嘴边
+    # —— 项目渠道（酒店工程）——
+    - "hotel bathroom project"  # 1/3
+    - "hotel procurement"       # 3/3  工程采购，客单价高
+    # —— 展会（买家聚集地）——
+    - "Canton Fair"             # 2/3  广交会，买家最集中
+    - "KBIS"                    # 1/3  美国厨卫展
+    # —— 中文（比例低，保留一条）——
+    - "洁具"                     # 2/3
+
+  # 实测无效、已移除：hospitality design / bathroom renovation /
+  #                 ISH Frankfurt / kitchen and bath / bathroom showroom / 卫浴
+
+  # 冷启动期：刚开始运营的前 N 天用更轻的行为量
+  warmup_days: 14
+  warmup_sessions_per_day: [1, 3]
+  warmup_comment_probability: 0.3
+  # 评论概率门命中后在这个区间取条数；允许取到 0（即"这个时段看了但没评"）
+  warmup_comments_per_session: [0, 1]
+
+platforms:
+  linkedin:
+    base_url: "https://www.linkedin.com"
+    feed_url: "https://www.linkedin.com/feed"
+  facebook:
+    base_url: "https://www.facebook.com"
+    feed_url: "https://www.facebook.com"

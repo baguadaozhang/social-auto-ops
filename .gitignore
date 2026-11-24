@@ -1,0 +1,12 @@
+profiles/*
+!profiles/.gitkeep
+data/*
+!data/.gitkeep
+.venv/
+__pycache__/
+*.pyc
+*.db
+.DS_Store
+
+# 本地运营手册（含业务策略），不公开
+OPERATIONS-SOP.md

@@ -1,0 +1,68 @@
+# English comment templates (primary language for overseas customers)
+# Format: [tag] text    or plain text (no tag = general)
+# Tags: supply / quality / cost / delivery / market / production / digital
+# Keep it conversational: questions and first hand experience beat generic praise.
+
+# ---------- supply chain / logistics ----------
+[supply] Freight rates are the wild card again this year. Are you locking in long term contracts or staying on spot?
+[supply] Curious how many days of inventory you usually carry. We keep ours fairly tight.
+[supply] Stability beats a few points of savings, in my experience.
+[supply] Do you work with one forwarder or compare quotes each shipment? We moved to long term partners.
+[supply] Customs issues come up more often than people expect. Getting compliance right early saves a lot of pain.
+[supply] Dual sourcing sounds great on paper, but keeping quality consistent across two plants is the hard part.
+
+# ---------- quality ----------
+[quality] Keeping standards consistent across multiple factories is the hardest part of QC.
+[quality] What defect rate are you running at? We have been pushing ours down for two years.
+[quality] Certification is expensive, but it is a hard gate for the EU and US markets.
+[quality] Quality cost and rework cost are really the same line item in the long run.
+[quality] How do you set sampling levels? Too tight and cost climbs, too loose and risk climbs.
+[quality] Agreed. Money spent on prevention is always cheaper than the fix afterwards.
+
+# ---------- cost / pricing ----------
+[cost] Raw material swings hit us harder than labor cost these days.
+[cost] Curious how you take cost out without touching quality. We learned that one the hard way.
+[cost] If the quote leaves out hidden costs, it always comes back later.
+[cost] Agreed. Buying on price alone usually ends up being the most expensive option.
+[cost] Scale helps a lot in manufacturing, but small batch orders never get that benefit.
+[cost] Do you calculate cost per order or per year? The answer changes a lot with the lens.
+
+# ---------- delivery / lead time ----------
+[delivery] Scheduling flexibility matters more than raw capacity when it comes to lead times.
+[delivery] What is your on time delivery rate these days?
+[delivery] The worst part of a delay is finding out late. Customers forgive problems, not surprises.
+[delivery] We ended up rebuilding our scheduling system because of lead time pressure.
+[delivery] Reserving capacity before peak season beats paying a premium during it.
+[delivery] Sampling and mass production timelines are very different, and customers often mix them up.
+
+# ---------- market / customers ----------
+[market] Demand in Europe and the US is moving fast. Which signals are you watching?
+[market] Trade shows have split into very different tiers. Picking the right one beats attending many.
+[market] Heavy reliance on one big customer is a double edged sword.
+[market] Where do most of your new customers come from these days?
+[market] Local service capability is becoming the real differentiator in export.
+[market] Agreed. Customers are not buying a product, they are buying a solution.
+
+# ---------- production / manufacturing ----------
+[production] What payback period are you seeing on line automation? We are evaluating it now.
+[production] Process stability affects yield more than how advanced the equipment is.
+[production] How long is your changeover time? That is what hurts on small batch orders.
+[production] Shop floor standardization is the hardest part, especially with high staff turnover.
+[production] Tooling is a big upfront cost, but it pays back over a few years.
+[production] Expanding capacity ahead of demand can turn into a burden very fast.
+
+# ---------- digital / automation ----------
+[digital] The hard part of digitalization is not the system, it is getting people to actually use the data.
+[digital] Are you building your dashboards in house or buying them? We are evaluating options.
+[digital] AI is landing faster in quality inspection than in marketing, in my experience.
+[digital] Agreed. Tools amplify whatever process you already have, including a messy one.
+[digital] Automation payback depends heavily on order mix. High mix low volume is tough.
+[digital] Data silos are where these projects usually stall. Cross department buy in is hard.
+
+# ---------- general ----------
+This is a practical view. The operational detail matters more than the theory.
+Well put. Saving this one for later.
+Curious whether this approach still holds for smaller teams?
+Agreed, execution detail is where most of it gets decided.
+Fair point, though the answer probably differs by company size.
+Thanks for sharing. First hand experience like this is more useful than most industry reports.
