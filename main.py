@@ -120,6 +120,8 @@ def build(argv: list[str] | None = None) -> argparse.ArgumentParser:
     )
     p_chrome.add_argument("--platform", default="linkedin", choices=PLATFORMS)
 
+    sub.add_parser("ramp", help="查看评论量阶段提升计划：当前第几档、还差什么才能过关")
+
     p_plan = sub.add_parser("plan", help="生成/查看随机作息表")
     p_plan.add_argument("--platform", default="linkedin", choices=PLATFORMS)
     p_plan.add_argument("--days", type=int, default=1, help="规划未来几天（默认今天）")
@@ -346,6 +348,52 @@ def main(argv: list[str] | None = None) -> int:
                 manual=True,
             )
         print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "ramp":
+        from src.comment_ramp import CommentRamp
+
+        for platform in resolve_platforms(getattr(args, "platform", "linkedin")):
+            ramp = CommentRamp(config, db)
+            stages = ramp.stages()
+            ev = ramp.evaluate(platform)
+            cur, tgt, m = ev["current"], ev["target"], ev["metrics"]
+
+            print(f"\n[{platform}] 评论量阶段计划（自 {ev['started']} 起第 {ev['days']} 天）")
+            print(f"  当前档位 : {cur.name}")
+            print(f"  每日上限 : {cur.max_per_day} 条（今天已用 "
+                  f"{db.comments_posted_on(platform)} 条，还剩 "
+                  f"{ramp.daily_allowance(platform)} 条）")
+            print(f"  每时段   : {cur.per_session[0]}-{cur.per_session[1]} 条，"
+                  f"出现概率 {cur.probability:.0%}")
+            print(f"  本档目标 : {cur.goal}")
+
+            if ev["held_back"]:
+                print(f"  [受阻] 本可进 {tgt.name}，但健康门槛没过，压在 {cur.name}：")
+                for r in ev["gate_reasons"]:
+                    print(f"     - {r}")
+            elif ev["gate_passed"]:
+                print("  [OK] 健康门槛通过")
+            else:
+                print("  [注意] 健康门槛未过（还没到提档的那天，先观察）：")
+                for r in ev["gate_reasons"]:
+                    print(f"     - {r}")
+
+            print(f"  近 {m['lookback_days']} 天：熔断 {m['circuit_breaker_failures']} 次 / "
+                  f"verify_failed {m['verify_failed']} 次 / 确认成功 {m['verified_comments']} 条")
+
+            if ev["next"]:
+                gap = max(0, ev["next"].min_day - ev["days"])
+                print(f"  下一档   : {ev['next'].name}"
+                      f"（第 {ev['next'].min_day} 天起，还差 {gap} 天）＋ 健康门槛通过")
+            else:
+                print("  下一档   : 已是最高档")
+
+            print("  全档位:")
+            for st in stages:
+                mark = ">" if st.index == cur.index else " "
+                print(f"   {mark} [{st.index}] {st.name:<12} 第 {st.min_day:>2} 天起  "
+                      f"{st.per_session[0]}-{st.per_session[1]} 条/时段  上限 {st.max_per_day}/天")
         return 0
 
     if args.command == "keywords":

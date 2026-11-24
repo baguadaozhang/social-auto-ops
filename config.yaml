@@ -111,6 +111,41 @@ circuit_breaker:
   # 结果按 24 小时熔断白停了一天。明确的限流提示仍走 cooldown_hours。
   verify_failed_hours: 3
 
+# 评论量分阶段提升：测试期低量（先发现脚本问题、别封号），凭证据一档一档放。
+# 每档除了时间门槛 min_day，还必须过健康门槛 gate：不达标就停在上一档。
+comment_ramp:
+  enabled: true
+  gate:
+    lookback_days: 3                  # 回看最近几天
+    max_circuit_breaker_failures: 0   # 这段时间里不允许有熔断
+    max_verify_failed: 1              # 回读校验失败最多容忍 1 次
+    min_verified_comments: 2          # 至少 2 条被确认成功，才算链路可信
+  stages:
+    - name: "S0 链路验证"
+      min_day: 0
+      probability: 0.5
+      per_session: [1, 1]
+      max_per_day: 2
+      goal: "每条评论都能通过回读校验，确认提交链路是通的"
+    - name: "S1 稳定性"
+      min_day: 3
+      probability: 0.6
+      per_session: [1, 2]
+      max_per_day: 4
+      goal: "连续几天 verify_failed 为 0，没有限流提示"
+    - name: "S2 常规节奏"
+      min_day: 8
+      probability: 0.7
+      per_session: [1, 3]
+      max_per_day: 6
+      goal: "节奏稳定，账号无受限提示"
+    - name: "S3 放量"
+      min_day: 15
+      probability: 0.85
+      per_session: [2, 4]
+      max_per_day: 10
+      goal: "接近配额 15 但保留余量"
+
 # 存储路径
 storage:
   database: "./data/social.db"

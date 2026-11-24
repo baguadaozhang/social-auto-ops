@@ -17,6 +17,7 @@ from typing import Any
 from .browser import BrowserManager
 from .database import Database
 from .humanize import Humanizer
+from .comment_ramp import CommentRamp
 from .risk_control import CircuitBreakerTripped, RiskController
 from .tasks.commenter import Commenter
 from .tasks.follower import Follower
@@ -106,18 +107,25 @@ class DayPlanner:
             _lognormal(random, browse_lo, browse_hi), 1
         )
 
-        # 评论：按概率出现，条数随机；冷启动期降频降量
-        prob_key = (
-            "schedule.warmup_comment_probability" if warm
-            else "schedule.comment_probability"
-        )
-        prob = float(cfg.get(prob_key, 0.3 if warm else 0.55))
-        if random.random() < prob:
+        # 评论：条数由「阶段放量」(comment_ramp) 决定——
+        # 测试期故意压低，先把脚本问题跑出来、别封号；凭证据一档一档往上放。
+        # 把 comment_ramp.enabled 关掉就退回原来的 warmup/常规配置。
+        ramp = CommentRamp(cfg, self.db)
+        if ramp.enabled():
+            prob = ramp.probability(self.platform)
+            c_lo, c_hi = ramp.per_session(self.platform)
+        else:
+            prob_key = (
+                "schedule.warmup_comment_probability" if warm
+                else "schedule.comment_probability"
+            )
+            prob = float(cfg.get(prob_key, 0.3 if warm else 0.55))
             range_key = (
                 "schedule.warmup_comments_per_session" if warm
                 else "schedule.comments_per_session"
             )
             c_lo, c_hi = _rand_range(cfg, range_key, (0, 1) if warm else (1, 2))
+        if random.random() < prob:
             # 允许取到 0：上面的概率门决定"这个时段评不评论"，
             # 命中后 0 条也是合法结果（warmup 期 [0,1] 配置才有意义）
             actions["comments"] = int(random.uniform(c_lo, c_hi + 0.999))
@@ -326,6 +334,20 @@ class Scheduler:
             run_step("follow", _follow)
 
         comments = int(actions.get("comments") or 0)
+        if comments > 0:
+            # 当日额度兜底：排程只是"计划"，这里按今天真实已用量再裁一次。
+            # 某个时段被跳过/延迟后，后面的时段不该把额度叠加用掉。
+            ramp = CommentRamp(self.config, self.db)
+            if ramp.enabled():
+                allowance = ramp.daily_allowance(platform)
+                if comments > allowance:
+                    results["comment_clamped"] = {
+                        "planned": comments,
+                        "allowed": allowance,
+                    }
+                    comments = allowance
+
+        # 注意这里再判一次：额度被裁到 0 时只跳过评论，不能连带跳过发帖
         if comments > 0:
             # 主动按关键词找相关话题，而不是等信息流推送
             # （信息流里大多是不相关的内容，会被话题过滤全部筛掉）

@@ -356,6 +356,45 @@ class Database:
             )
             return int(cur.lastrowid)
 
+    def count_logs(
+        self,
+        platform: str,
+        action: str,
+        status: str | None = None,
+        days: int | None = None,
+        day: str | None = None,
+    ) -> int:
+        """统计某平台某个动作的日志条数。
+
+        days: 只算最近 N 天（含今天）；day: 只算某一天（YYYY-MM-DD）。
+        两个都不传就是全量。用于「阶段放量」过关判定与当日用量核算。
+        """
+        sql = "SELECT COUNT(*) FROM logs WHERE platform = ? AND action = ?"
+        params: list[Any] = [platform, action]
+        if status is not None:
+            sql += " AND status = ?"
+            params.append(status)
+        if day is not None:
+            sql += " AND date(created_at) = ?"
+            params.append(day)
+        elif days is not None:
+            cutoff = (date.today() - timedelta(days=days - 1)).isoformat()
+            sql += " AND date(created_at) >= ?"
+            params.append(cutoff)
+        with self.session() as conn:
+            return int(conn.execute(sql, params).fetchone()[0])
+
+    def comments_posted_on(self, platform: str, day: str | None = None) -> int:
+        """某天「可能已经发出去」的评论数。
+
+        verify_failed 也要算进来：2026-11-24 那次被判失败的评论其实发布成功了，
+        真实发布量比 success 计数多。核用量时只能按"可能已发出"来算，否则会超发。
+        """
+        day = day or date.today().isoformat()
+        return self.count_logs(platform, "comment", "success", day=day) + self.count_logs(
+            platform, "comment", "verify_failed", day=day
+        )
+
     def count_leads(self, days: int = 7) -> int:
         """最近 N 天新增线索数（`main.py status` 的"本周线索数"）。"""
         cutoff = (datetime.now() - timedelta(days=days)).isoformat(timespec="seconds")
