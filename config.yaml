@@ -45,6 +45,10 @@ time_window:
   # （真正的随机作息时间由下面的 schedule 段生成，不是靠这个抖动）
   jitter_minutes: 40
   # 周末配额自动减半
+  # 2026-11-24 注：当前不生效。weekdays_only: true 时 check_time_window()
+  #   在周末直接返回 False，任何操作都进不到配额判断，这个减半分支永远走不到。
+  #   保留该键是为了以后把 weekdays_only 改成 false 时能直接生效
+  #   （代码里 effective_quota 的默认值也是 0.5）。
   weekend_multiplier: 0.5
 
 # 行为拟真层 - 第一版核心
@@ -110,8 +114,11 @@ run:
 
 comment:
   # 评论里出现"人为小瑕疵"的概率（拼写/同音字手误 / 标点疏忽 / 口语填充词）
-  # 领英是职业场景，错字比日常聊天少见，建议 0.05-0.1，不要调高
-  imperfection_probability: 0.08
+  # 领英是职业场景，错字比日常聊天少见。
+  # 2026-11-24: 0.08 -> 0.04。理由：8% 大约每 12 条评论就有一条带错别字，
+  #   在职业场景里被读成"不专业"的风险高于被读成"真人"的收益；
+  #   降到 4% 既保留一点毛边，又不至于每次都像手滑。
+  imperfection_probability: 0.04
   # 主语言：评论语言跟随帖子语言，读不到正文时用这个
   # 客户主要是外国人，所以默认英文
   primary_language: "en"
@@ -176,11 +183,18 @@ schedule:
   #                 ISH Frankfurt / kitchen and bath / bathroom showroom / 卫浴
 
   # 冷启动期：刚开始运营的前 N 天用更轻的行为量
-  warmup_days: 14
+  # 2026-11-24: 14 -> 7 天。理由：14 天 × 每天 1-3 个时段 × 30% 概率 × 0-1 条，
+  #   期望一天不到 1 条评论，两周下来几乎没积累；7 天足够先养一轮，
+  #   之后按正常节奏走。
+  warmup_days: 7
   warmup_sessions_per_day: [1, 3]
-  warmup_comment_probability: 0.3
-  # 评论概率门命中后在这个区间取条数；允许取到 0（即"这个时段看了但没评"）
-  warmup_comments_per_session: [0, 1]
+  # 2026-11-24: 0.3 -> 0.4。配合 warmup_days 减半，保证冷启动期也有稳定产出。
+  warmup_comment_probability: 0.4
+  # 评论概率门命中后在这个区间取条数
+  # 2026-11-24: [0, 1] -> [1, 2]。理由：原来命中概率后又抽到 0，
+  #   等于这个时段白跑一趟（还消耗了浏览时间）；命中就至少评 1 条，
+  #   行为曲线也更连续。
+  warmup_comments_per_session: [1, 2]
 
 platforms:
   linkedin:
