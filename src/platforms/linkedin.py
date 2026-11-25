@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 from .base import BasePlatform
 from ..humanize import page_wait
@@ -136,6 +137,7 @@ _COMMENT_SUBMIT_POINT_JS = """
 
 
 class LinkedInPlatform(BasePlatform):
+    supports_media = True  # 支持发帖附带图片/视频
     name = "linkedin"
 
     # 必须是"只有登录后才有"的元素，避免公开页误判
@@ -153,8 +155,225 @@ class LinkedInPlatform(BasePlatform):
     # 被重定向到这些路径说明登录态失效
     LOGIN_REDIRECTS = ("/login", "/authwall", "/checkpoint", "/uas/login")
 
-    def post(self, content: str) -> dict:
-        """发帖流程：安全检查 → 热身 → 打开编辑器 → 拟真输入 → 发布。"""
+    # ---------- 发帖媒体（图片 / 视频）----------
+    # 真实结构（2026-11-25 在活账号上探明）：
+    #   入口是 button[aria-label='媒体文件']，点下去**直接**弹系统文件选择器，没有二级菜单；
+    #   隐藏 input 的 accept 覆盖 jpg/png/gif/webp/avif/bmp + video/*，可多选。
+    #   上传完成后编辑器里出现 src 为 blob: 且 naturalWidth>0 的预览图、进度条消失；
+    #   此时「发布」按钮仍可能是 disabled，因为正文还没填——所以顺序必须是
+    #   先传媒体、再填文字、最后发布。
+    _MEDIA_BTN_SELECTORS = [
+        "button[aria-label='媒体文件']",
+        "button[aria-label='Media']",
+        "button[aria-label='Add a photo or video']",
+        "button[aria-label*='照片或视频']",
+        "button[aria-label*='photo or video']",
+    ]
+    _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".bmp"}
+    _VIDEO_EXTS = {".mp4", ".mov", ".m4v"}
+
+    _MEDIA_STATE_JS = r"""
+    () => {
+      const imgs = [...document.querySelectorAll('img')].filter(i => (i.src||'').startsWith('blob:'));
+      const vids = [...document.querySelectorAll('video')].filter(v => (v.src||'').startsWith('blob:'));
+      const progress = document.querySelectorAll('[role="progressbar"]').length;
+      const txt = document.body.innerText || '';
+      const processing = /处理中|正在处理|上传中|Processing|Uploading/.test(txt);
+      return {
+        blob_imgs: imgs.length,
+        loaded_imgs: imgs.filter(i => i.naturalWidth > 0 && i.naturalHeight > 0).length,
+        blob_videos: vids.length,
+        videos_ready: vids.filter(v => (v.readyState || 0) >= 1).length,
+        progress: progress,
+        processing: processing
+      };
+    }
+    """
+
+    def _classify_media(self, paths: list[str]) -> tuple[list[str], list[str], list[str]]:
+        """把待发文件分成图片/视频，并做本地校验。返回 (images, videos, errors)。
+
+        先在本地拦掉明显不合法的输入，别让浏览器白传一遍才发现不行。
+        """
+        images: list[str] = []
+        videos: list[str] = []
+        errors: list[str] = []
+        allow_image = bool(self.config.get("post.media.allow_image", True))
+        allow_video = bool(self.config.get("post.media.allow_video", True))
+        max_image_mb = float(self.config.get("post.media.max_image_mb", 20))
+        max_video_mb = float(self.config.get("post.media.max_video_mb", 200))
+        max_images = int(self.config.get("post.media.max_images", 9))
+
+        for raw in paths:
+            if not raw:
+                continue
+            fp = Path(raw).expanduser()
+            if not fp.is_absolute():
+                fp = Path(self.config.root) / fp
+            if not fp.is_file():
+                errors.append(f"文件不存在: {raw}")
+                continue
+            ext = fp.suffix.lower()
+            size_mb = fp.stat().st_size / (1024 * 1024)
+            if ext in self._IMAGE_EXTS:
+                if not allow_image:
+                    errors.append(f"已关闭图片发布: {fp.name}")
+                    continue
+                if size_mb > max_image_mb:
+                    errors.append(f"图片超过 {max_image_mb:g}MB: {fp.name}")
+                    continue
+                images.append(str(fp))
+            elif ext in self._VIDEO_EXTS:
+                if not allow_video:
+                    errors.append(f"已关闭视频发布: {fp.name}")
+                    continue
+                if size_mb > max_video_mb:
+                    errors.append(f"视频超过 {max_video_mb:g}MB: {fp.name}")
+                    continue
+                videos.append(str(fp))
+            else:
+                errors.append(f"不支持的文件类型: {fp.name}")
+
+        if len(images) > max_images:
+            errors.append(f"图片最多 {max_images} 张，收到 {len(images)} 张")
+        if videos and images:
+            errors.append("一次只能发图片或视频，不能混发")
+        if len(videos) > 1:
+            errors.append(f"视频一次只能 1 个，收到 {len(videos)} 个")
+        return images, videos, errors
+
+    def _media_state(self, page) -> dict:
+        try:
+            st = page.evaluate(self._MEDIA_STATE_JS) or {}
+        except Exception:
+            return {"ready": False}
+        ready = (
+            st.get("progress", 0) == 0
+            and not st.get("processing", False)
+            and (st.get("loaded_imgs", 0) >= 1 or st.get("videos_ready", 0) >= 1)
+        )
+        return {**st, "ready": ready}
+
+    def _attach_media(self, page, files: list[str], timeout_s: float = 180.0) -> dict:
+        """点「媒体文件」把文件塞进编辑器，并等上传/处理完成。
+
+        只负责"文件挂上去且处理完"，正文仍由调用方输入（顺序不能反）。
+        视频处理比图片慢得多，所以给足超时，并要求"连续两次检测都就绪"才算完成，
+        避免正好在进度条消失的那一瞬误判。
+        """
+        button = self._first_in(page, self._MEDIA_BTN_SELECTORS)
+        if button is None:
+            return {"ok": False, "error": "未找到媒体按钮（界面可能已改版）"}
+        try:
+            with page.expect_file_chooser(timeout=8000) as chooser_info:
+                self.humanizer.human_click(button)
+            chooser = chooser_info.value
+            chooser.set_files(files)
+        except Exception as exc:
+            return {"ok": False, "error": f"打开文件选择器失败: {type(exc).__name__}: {exc}"}
+
+        deadline = time.monotonic() + timeout_s
+        settled = 0
+        last: dict = {}
+        while time.monotonic() < deadline:
+            last = self._media_state(page)
+            if last.get("ready"):
+                settled += 1
+                if settled >= 2:
+                    return {"ok": True, "state": last}
+            else:
+                settled = 0
+            page_wait(page, 1200, jitter=0.3)
+        return {
+            "ok": False,
+            "error": f"媒体处理超时（{int(timeout_s)}s 内未就绪）",
+            "state": last,
+        }
+
+    _PURGE_JS = r"""
+    () => {
+      const ds = [...document.querySelectorAll('dialog[open]')];
+      if (!ds.length) return {open: 0};
+      // 注意：不能拿整个弹窗的 innerText 判空——它必然含有「媒体文件」「动态」
+      // 等界面文字。只看正文框里有没有人写的东西。
+      const has_media = document.querySelectorAll(
+        'dialog[open] img[src^="blob:"], dialog[open] video[src^="blob:"]'
+      ).length > 0;
+      const ed = document.querySelector('dialog[open] div[contenteditable="true"]');
+      const text = ed ? (ed.innerText || "").trim() : "";
+      return {open: ds.length, text_len: text.length, has_media: has_media};
+    }
+    """
+    _DISCARD_JS = r"""
+    () => {
+      const ds = [...document.querySelectorAll('dialog[open]')];
+      for (let i = ds.length - 1; i >= 0; i--) {
+        const d = ds[i];
+        // 有内容时会弹「保存为草稿 / 放弃」，先点放弃
+        for (const b of d.querySelectorAll('button')) {
+          const t = (b.innerText || "").trim();
+          if (t === '放弃' || /Discard/.test(b.getAttribute('aria-label') || '')) {
+            b.click(); return 'discard';
+          }
+        }
+        // 空窗口点「关闭」会直接关掉，不需要确认
+        for (const b of d.querySelectorAll('button')) {
+          const s = ((b.getAttribute('aria-label') || '') + ' ' + (b.innerText || '')).trim();
+          if (/关闭|Dismiss/.test(s)) { b.click(); return 'close'; }
+        }
+      }
+      return '';
+    }
+    """
+
+    def _purge_leftover_composer(self, page) -> dict:
+        """处理上一次失败留下的发布窗口。
+
+        2026-11-25 踩过：一次演练中途抛异常，发帖弹窗（原生 <dialog>）没被关掉，
+        它会把后面每次点击都拦掉，导致连续多次"发帖失败"，而真正原因只是残留窗口。
+        这里做两件事：
+          - 空窗口（没有文字也没有媒体）直接丢弃，没有任何东西会丢；
+          - 有内容的窗口不碰——可能是人正在写的草稿，宁可这次不发也不覆盖人的内容。
+        """
+        try:
+            state = page.evaluate(self._PURGE_JS) or {}
+        except Exception:
+            return {"ok": True}
+        if not state.get("open"):
+            return {"ok": True}
+        if state.get("text_len", 0) > 0 or state.get("has_media"):
+            return {
+                "ok": False,
+                "error": "检测到未关闭的发布窗口且里面有内容，为避免覆盖人工草稿，本次不发布",
+            }
+        # 可能有两层（发布框 + 「保存为草稿?」确认框），要循环关
+        for _ in range(6):
+            try:
+                if not (page.evaluate(self._PURGE_JS) or {}).get("open"):
+                    break
+                action = page.evaluate(self._DISCARD_JS)
+            except Exception:
+                action = ""
+            page_wait(page, 1000)
+            if not action:
+                # 没有可点的关闭按钮，退到 Esc
+                try:
+                    page.keyboard.press("Escape")
+                except Exception:
+                    pass
+                page_wait(page, 800)
+        still = False
+        try:
+            still = bool((page.evaluate(self._PURGE_JS) or {}).get("open"))
+        except Exception:
+            pass
+        if still:
+            return {"ok": False, "error": "残留的发布窗口无法关闭，本次不发布"}
+        self.db.log(self.name, "post", "purged_leftover", {"note": "清理了上次遗留的空发布窗口"})
+        return {"ok": True, "purged": True}
+
+    def post(self, content: str, media: list[str] | None = None) -> dict:
+        """发帖流程：安全检查 → 热身 → 打开编辑器 → [上传媒体] → 拟真输入 → 发布。"""
         try:
             self._precheck()
         except (QuotaExceeded, TimeWindowClosed, AccountCoolingDown) as exc:
@@ -169,6 +388,11 @@ class LinkedInPlatform(BasePlatform):
             # 会话热身：先像人一样逛一会儿
             self.humanizer.warmup(page)
 
+            # 先处理上次失败留下的发布窗口，否则它会把后续所有点击拦掉
+            purged = self._purge_leftover_composer(page)
+            if not purged.get("ok"):
+                return self._on_failure(content, str(purged.get("error")))
+
             # 找到发帖入口
             starter = self.find_first(page, _START_SELECTORS, timeout_ms=6000)
             if starter is None:
@@ -182,7 +406,30 @@ class LinkedInPlatform(BasePlatform):
             if editor is None:
                 self.debug_shot(page, "no_editor")
                 return self._on_failure(content, "未找到内容编辑框")
+            # 顺序很关键：必须「先写正文、再挂媒体」。
+            # 2026-11-25 在活账号上实测：图片上传后预览图会盖住正文框（正文框只有 32px 高），
+            # 此时再点正文框会被 <img alt="图片预览"> 拦截，文字根本输不进去，
+            # 于是「动态」按钮一直 disabled、发帖必然失败。反过来先写正文再挂媒体，
+            # 实测正文保留、按钮仍可用，是可行顺序。
             self.humanizer.human_type(editor, content)
+
+            media_note: dict = {}
+            if media:
+                images, videos, errors = self._classify_media(media)
+                if errors:
+                    return self._on_failure(content, "媒体校验未通过: " + "；".join(errors))
+                files = images or videos
+                attached = self._attach_media(page, files)
+                if not attached.get("ok"):
+                    self.debug_shot(page, "media_upload_failed")
+                    return self._on_failure(
+                        content, f"媒体上传失败: {attached.get('error')}"
+                    )
+                media_note = {
+                    "media_kind": "image" if images else "video",
+                    "media_count": len(files),
+                    "media_files": [Path(f).name for f in files],
+                }
 
             # 发布前再看一眼
             self.humanizer.pause_before_submit()
@@ -217,7 +464,7 @@ class LinkedInPlatform(BasePlatform):
                 url = page.url
             except Exception:
                 pass
-            return self._on_success(content, url)
+            return self._on_success(content, url, extra=media_note or None)
 
         except CircuitBreakerTripped as exc:
             return self._on_failure(content, str(exc))

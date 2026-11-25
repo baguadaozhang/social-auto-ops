@@ -67,6 +67,14 @@ def build(argv: list[str] | None = None) -> argparse.ArgumentParser:
     p_post.add_argument("--content", help="帖子文本内容")
     p_post.add_argument("--file", help="从文件读取帖子文本（优先级低于 --content）")
     p_post.add_argument("--at", help="定时执行时间，ISO 格式如 2026-11-23T10:30:00")
+    p_post.add_argument(
+        "--media", action="append", metavar="PATH",
+        help="附带图片或视频；可重复传多个做多图。路径相对项目根目录",
+    )
+    p_post.add_argument(
+        "--index", type=int,
+        help="只取内容文件里的第 N 篇（从 1 起），避免把整个文件一次性排进队列",
+    )
 
     p_run = sub.add_parser("run", help="执行队列中的待发帖任务")
     p_run.add_argument("--max", type=int, default=20, help="本次最多处理任务数")
@@ -259,14 +267,21 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "post":
         contents = read_contents(args)
+        if getattr(args, "index", None):
+            if not 1 <= args.index <= len(contents):
+                print(f"--index 超出范围：内容文件共 {len(contents)} 篇，收到 {args.index}")
+                return 1
+            contents = [contents[args.index - 1]]
+        media = list(getattr(args, "media", None) or [])
         poster = Poster(BrowserManager(config), humanizer, risk, db, config)
         platforms = resolve_platforms(args.platform)
         ids = []
         for platform in platforms:
             for content in contents:
-                ids.append(poster.enqueue(platform, content, args.at))
+                ids.append(poster.enqueue(platform, content, args.at, media=media))
+        media_note = f"，每条附带 {len(media)} 个媒体文件" if media else ""
         print(
-            f"已加入队列：{len(contents)} 条内容 × {len(platforms)} 个平台，"
+            f"已加入队列：{len(contents)} 条内容 × {len(platforms)} 个平台{media_note}，"
             f"任务 ID: {ids}"
         )
         print("提示：运行 `python main.py run` 执行；当前配置可能要求人工确认。")

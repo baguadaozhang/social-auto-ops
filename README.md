@@ -302,6 +302,31 @@ python main.py ramp      # 看当前第几档、今天还剩多少额度、差�
 
 关掉就退回原来的 warmup 逻辑：`comment_ramp.enabled: false`。
 
+## 发帖附带图片 / 视频
+
+```bash
+# 发一篇文字 + 一张图（--index 指定内容文件里的第几篇，避免整个文件一次性排队）
+python main.py post --platform linkedin --file content/posts.md --index 1 --media content/media/workshop.jpg
+
+# 多图（最多 post.media.max_images，默认 9）
+python main.py post --platform linkedin --file content/posts.md --index 2 \
+    --media content/media/a.jpg --media content/media/b.jpg
+```
+
+支持 `jpg/jpeg/png/gif/webp/avif/bmp` 与 `mp4/mov/m4v`；一次只能发「多张图」或「一个视频」，不能混发。
+
+**顺序为什么是「先正文、后媒体」**：2026-11-25 在活账号上实测，图片上传后预览图会盖住正文框
+（正文框只有 32px 高），此时点正文框会被 `<img alt="图片预览">` 拦截，文字输不进去，
+「发布」按钮保持 disabled，发帖必然失败。反过来先写正文再挂媒体则正常。
+
+**残留发布窗口会自愈**：一次失败可能留下没关的发帖弹窗（原生 `<dialog>`），它会把后续所有点击拦掉，
+表现为「连发几次都失败」。现在每次发帖前会检查：
+空窗口直接丢弃（并记 `purged_leftover` 审计日志）；**窗口里有文字或媒体则不碰**——
+那可能是人正在写的草稿，宁可这次不发也不覆盖。
+
+**一个已知限制**：图片/视频上传完成靠「`blob:` 预览图 `naturalWidth>0` 且无进度条/处理中文字」判定，
+图片实测约 1.5 秒就绪；视频耗时更长，靠 `post.media.video_timeout_s`（默认 300 秒）兜底。
+
 ## 内容文件格式
 
 `--file` 支持一个文件放多篇帖子，用单独一行 `---` 分隔：

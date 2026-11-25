@@ -46,13 +46,20 @@ class Poster:
             )
         return self._platforms[name]
 
-    def enqueue(self, platform: str, content: str, run_at: str | None = None) -> int:
-        """把发帖内容加入队列。"""
+    def enqueue(
+        self,
+        platform: str,
+        content: str,
+        run_at: str | None = None,
+        media: list[str] | None = None,
+    ) -> int:
+        """把发帖内容（可附带图片/视频）加入队列。"""
         if platform not in ("linkedin", "facebook"):
             raise ValueError(f"不支持的平台: {platform}")
-        task_id = self.db.add_task(
-            platform, "post", {"content": content}, run_at=run_at
-        )
+        payload: dict[str, Any] = {"content": content}
+        if media:
+            payload["media"] = [str(m) for m in media if m]
+        task_id = self.db.add_task(platform, "post", payload, run_at=run_at)
         self.db.log(platform, "enqueue", "success", {"task_id": task_id}, task_id)
         return task_id
 
@@ -64,6 +71,7 @@ class Poster:
             action=task["action"],
             detail={
                 "content": payload.get("content", ""),
+                "media": payload.get("media") or [],
                 "reason": reason,
                 "task_id": task["id"],
             },
@@ -134,8 +142,17 @@ class Poster:
                 continue
 
             platform = self.platform(task["platform"])
+            media = [m for m in (payload.get("media") or []) if m]
+            if media and not getattr(platform, "supports_media", False):
+                msg = f"{platform_name} 暂不支持图片/视频发布"
+                self.db.update_task(task["id"], "failed", error=msg)
+                result["failed"] += 1
+                result["details"].append(
+                    {"task_id": task["id"], "status": "failed", "error": msg}
+                )
+                continue
             attempted[platform_name] = attempted.get(platform_name, 0) + 1
-            outcome = platform.post(content)
+            outcome = platform.post(content, media=media) if media else platform.post(content)
             self.db.update_task(
                 task["id"],
                 "done" if outcome.get("success") else "failed",

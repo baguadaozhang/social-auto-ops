@@ -111,6 +111,21 @@ circuit_breaker:
   # 结果按 24 小时熔断白停了一天。明确的限流提示仍走 cooldown_hours。
   verify_failed_hours: 3
 
+# 发帖媒体（图片 / 视频）
+# 2026-11-25 在活账号上探明：编辑器里 button[aria-label='媒体文件'] 会直接弹文件选择器，
+# accept 覆盖 jpg/png/gif/webp/avif/bmp + video/*。上传顺序必须是「先媒体、后正文」，
+# 因为正文为空时「发布」按钮是 disabled。
+post:
+  media:
+    dir: "./content/media"
+    allow_image: true
+    allow_video: true
+    max_images: 9          # 一次最多几张图（安全上限）
+    max_image_mb: 20
+    max_video_mb: 200
+    # 视频处理比图片慢得多，等这么久还没就绪就判失败，不发半成品
+    video_timeout_s: 300
+
 # 关注策略（这里的「关注」= Follow 按钮，不是 Connect 发邀请）
 follow:
   # 是否关注公司页。2026-11-24 决定保留：关注公司页是正常人类行为、风险低，

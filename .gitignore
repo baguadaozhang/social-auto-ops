@@ -10,3 +10,7 @@ __pycache__/
 
 # 本地运营手册（含业务策略），不公开
 OPERATIONS-SOP.md
+
+# 发帖用的图片/视频不纳入版本库（二进制大文件），只留目录
+content/media/*
+!content/media/.gitkeep

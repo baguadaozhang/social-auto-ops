@@ -13,6 +13,9 @@ from ..risk_control import RiskController
 
 
 class BasePlatform:
+    # 平台是否支持发帖附带图片/视频；不支持时 Poster 会在入队前拦下
+    supports_media = False
+
     name: str = "base"
     # 子类覆盖：只有登录后才存在的元素，以及登录态失效时会被重定向到的路径
     LOGGED_IN_SELECTORS: list[str] = []
@@ -161,10 +164,13 @@ class BasePlatform:
         self.risk.assert_time_window()
         self.risk.check_quota(self.name, "post")
 
-    def _on_success(self, content: str, url: str = "") -> dict:
+    def _on_success(self, content: str, url: str = "", extra: dict | None = None) -> dict:
+        detail: dict = {"preview": content[:60], "url": url}
+        if extra:
+            detail.update(extra)
         self.db.increment_quota(self.name, "post")
-        self.db.log(self.name, "post", "success", {"preview": content[:60], "url": url})
-        return {"success": True, "url": url}
+        self.db.log(self.name, "post", "success", detail)
+        return {"success": True, "url": url, **(extra or {})}
 
     def _on_failure(self, content: str, error: str) -> dict:
         self.db.log(self.name, "post", "failed", {"preview": content[:60], "error": error})
