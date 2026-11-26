@@ -3,15 +3,20 @@
 这个目录只放 **Facebook 平台专属** 的文档、内容与手工脚本。
 共享入口（`main.py`、`config.yaml`、`src/`、`profiles/`、`data/`）仍在项目根目录，不要移动。
 
+> **每天怎么操作 → 看根目录 [`OPERATIONS-MANUAL.md`](../OPERATIONS-MANUAL.md) 第 3 章「每日流程」。**
+> 本文件只说明目录里有什么，不重复日常步骤。
+
 ## 目录
 
 | 路径 | 内容 |
 |---|---|
 | `docs/FACEBOOK-OPERATIONS-PLAN.md` | Facebook 运营启动计划（v0.4，恢复/观察优先） |
 | `docs/FB-ACCOUNT-CHECKLIST.md` | 账号体检表（限制史、主页、管理员、观察期记录） |
+| `docs/FB-ACCOUNT-FACTS.md` | 已核实的账号/主页事实（个人号 ID、Page ID、限制历史） |
 | `content/facebook_content_calendar.md` | 4 周 12 条主帖 + 8 条备用 |
 | `content/facebook_page_copy.md` | 主页名称/简介/About/CTA/Messenger 话术 |
 | `scripts/fb_cdp_check.py` | 只读检查 9223 登录态（不写 DB/profile） |
+| `scripts/fb_list_pages.py` | 只读列出账号下的主页及 Page ID |
 | `scripts/test_facebook_api_offline.py` | `facebook_api.py` 离线测试 |
 | `start_fb.bat` | 启动 9223 专用 Chrome（DSH 外双击） |
 | `check_fb.bat` | 检查 Facebook 登录态（DSH 外双击） |

@@ -5,6 +5,14 @@ LinkedIn + Facebook 自动化运营工具：**登录态持久化 + 行为拟真 
 > ⚠️ **免责声明**：自动操作社交媒体账号违反 LinkedIn / Meta 的用户协议，存在限流、验证码、封号风险。
 > 本项目仅用于技术研究与**自有账号**的运营实验，风险自负；请先用小号验证 1–2 周。
 
+## 每天怎么操作
+
+**日常执行只看一份文档：[`OPERATIONS-MANUAL.md`](OPERATIONS-MANUAL.md)。**
+
+它按"步骤 1、步骤 2……"写清每一步做什么、在哪做、预期结果、结果不对怎么办，
+含每日/每周/每月固定任务、异常处理、可复制的模板与命令。本 README 讲的是**系统怎么工作**，
+不是每天要做的事。
+
 - ✅ 已实现：登录态复用、随机日程、发帖、**评论（按话题选话术）**、**关注（只 follow，不发 Connect 邀请）**、配额、时间窗、熔断、人工待办
 - 🚧 未实现：Connect / 发邀请（与关注是两套限额，需独立实现）；Facebook 主页 API 客户端已备（`src/platforms/facebook_api.py`），尚未接入调度
 
@@ -437,6 +445,7 @@ python main.py post --platform linkedin --file content/posts.md --index 2 \
 
 | 路径 | 作用 |
 |---|---|
+| `OPERATIONS-MANUAL.md` | **日常操作手册**：每天/每周/每月做什么、异常怎么处理、模板与命令 |
 | `main.py` | CLI 入口：login / check / post / run / comment / plan / tick / daemon / status / todos / keywords |
 | `src/browser.py` | CDP 常驻 Chrome（复用同一窗口）+ persistent 兜底 |
 | `src/config.py` | `config.yaml` 加载，点号访问 + 默认值兜底 |

@@ -3,6 +3,9 @@
 这个目录只放 **LinkedIn 平台专属** 的文档、内容与手工脚本。
 共享入口与运行环境仍在项目根目录，不要移动。
 
+> **每天怎么操作 → 看根目录 [`OPERATIONS-MANUAL.md`](../OPERATIONS-MANUAL.md) 第 3 章「每日流程」。**
+> `docs/OPERATIONS-SOP.md` 是原理与参数说明，日常执行看手册即可。
+
 ## 目录
 
 | 路径 | 内容 |
