@@ -1,0 +1,4 @@
+# fb/scripts — Facebook 手工脚本
+
+- `fb_cdp_check.py`：只读检查 9223 登录态
+- `test_facebook_api_offline.py`：`facebook_api.py` 离线测试
