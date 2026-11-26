@@ -1,5 +1,12 @@
 # 社媒自动化运营 - 配置文件
 # 修改后无需改代码，重启命令即可生效
+#
+# 目录分工（2026-11-26）：
+#   根目录      = 共享入口（main.py / config.yaml / src / profiles / data / 启动 bat）
+#   fb/         = Facebook 文档、内容、脚本、start_fb/check_fb
+#   LinkedIn/   = 领英文档（SOP）、删帖/删评论脚本
+#   content/    = 两平台共用稿件与话术（posts.md / comments*.txt / media）
+# 注意：profiles/ 与 data/ 是运行目录，不要移动；根目录 *.bat 是启动入口，不要移动。
 
 browser:
   # 有头模式必须保持 true，无头模式极易被风控识别

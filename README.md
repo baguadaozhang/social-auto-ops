@@ -6,7 +6,18 @@ LinkedIn + Facebook 自动化运营工具：**登录态持久化 + 行为拟真 
 > 本项目仅用于技术研究与**自有账号**的运营实验，风险自负；请先用小号验证 1–2 周。
 
 - ✅ 已实现：登录态复用、随机日程、发帖、**评论（按话题选话术）**、**关注（只 follow，不发 Connect 邀请）**、配额、时间窗、熔断、人工待办
-- 🚧 未实现：Connect / 发邀请（与关注是两套限额，需独立实现）；Facebook 的实际自动化逻辑（仅有配置与页面骨架）
+- 🚧 未实现：Connect / 发邀请（与关注是两套限额，需独立实现）；Facebook 主页 API 客户端已备（`src/platforms/facebook_api.py`），尚未接入调度
+
+## 目录分工
+
+| 目录 | 放什么 |
+|---|---|
+| `fb/` | Facebook 专属文档、内容、脚本、启动脚本（`start_fb.bat` / `check_fb.bat`） |
+| `LinkedIn/` | LinkedIn 专属文档（SOP）、手工脚本（删帖/删评论） |
+| `content/` | 两平台共用的稿件与话术（`posts.md`、`comments*.txt`、`media/`） |
+| `src/`、`main.py`、`config.yaml` | 共享代码与配置（入口，勿移动） |
+| `profiles/`、`data/` | 运行目录（登录态、数据库、日志），**不要移动** |
+| 根目录 `*.bat` | 启动/自启动入口（LinkedIn 为主），**不要移动** |
 
 ## 随机日程（不做固定时间）
 
@@ -434,10 +445,12 @@ python main.py post --platform linkedin --file content/posts.md --index 2 \
 | `src/risk_control.py` | 配额 / 时间窗 / 熔断 / 人工介入 |
 | `src/scheduler.py` | 随机作息表生成 + 到点执行 |
 | `src/tasks/` | 评论、发帖的编排逻辑 |
-| `src/platforms/` | LinkedIn / Facebook 页面适配（**选择器集中在这里**，改版只改这） |
-| `content/` | 中英评论话术库、待发帖稿件 |
+| `src/platforms/` | LinkedIn / Facebook 页面适配（**选择器集中在这里**，改版只改这）；`facebook_api.py` 是主页 Graph API 客户端 |
+| `content/` | 两平台共用：`posts.md` 待发帖稿件、`comments*.txt` 话术库、`media/` 图片视频 |
+| `fb/` | Facebook 专属：计划/体检表、内容日历、主页文案、登录检查脚本、`start_fb.bat` / `check_fb.bat` |
+| `LinkedIn/` | LinkedIn 专属：`docs/OPERATIONS-SOP.md`、`scripts/delete_post.py`、`scripts/delete_comment.py` |
 | `config.yaml` | 全部可调参数（配额、时段、拟真、熔断、关键词） |
-| `scripts/` | 一次性小工具（删评论 / 删帖子） |
+| `scripts/` | 手工脚本索引（具体脚本在 `fb/scripts` 与 `LinkedIn/scripts`） |
 
 ## 许可
 

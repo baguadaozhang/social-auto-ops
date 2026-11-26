@@ -1,0 +1,6 @@
+# LinkedIn/scripts — 领英手工脚本
+
+- `delete_post.py`：删除测试帖子
+- `delete_comment.py`：删除测试评论
+
+这些脚本直连 CDP、绕过风控，只在手工清理时使用。

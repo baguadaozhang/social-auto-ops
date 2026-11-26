@@ -1,0 +1,4 @@
+# LinkedIn/content — 领英话术与内容
+
+当前 `comments.txt` / `comments_en.txt` 仍在根 `content/`（被 `storage.content_dir` 读取）。
+后续如要为评论库增加平台专属路径，再迁入这里。
