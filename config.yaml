@@ -285,3 +285,12 @@ platforms:
   facebook:
     base_url: "https://www.facebook.com"
     feed_url: "https://www.facebook.com"
+    # 2026-11-26：主页发帖改走 Business Suite（发布位置固定是主页），
+    #   旧代码走 facebook.com 首页「你在想什么」，那是个人时间线，会发错地方。
+    #   post_via: business_suite = 主页身份（默认）；personal = 旧行为（不建议）
+    post_via: "business_suite"
+    page_id: "61591663326933"
+    page_name: "Junzhou Sanitary Ware"
+    # Business Suite 的资产编号，和 Page ID 不是同一个数：打开
+    #   business.facebook.com/latest/composer 后看地址栏 asset_id= 后面那串
+    business_asset_id: "1212447438618991"

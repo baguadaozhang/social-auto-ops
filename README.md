@@ -14,7 +14,8 @@ LinkedIn + Facebook 自动化运营工具：**登录态持久化 + 行为拟真 
 不是每天要做的事。
 
 - ✅ 已实现：登录态复用、随机日程、发帖、**评论（按话题选话术）**、**关注（只 follow，不发 Connect 邀请）**、配额、时间窗、熔断、人工待办
-- 🚧 未实现：Connect / 发邀请（与关注是两套限额，需独立实现）；Facebook 主页 API 客户端已备（`src/platforms/facebook_api.py`），尚未接入调度
+- ✅ Facebook 主页发帖（2026-11-26）：走 Business Suite 编辑器，发布位置固定为主页；支持 `post_via: business_suite`
+- 🚧 未实现：Connect / 发邀请；**Facebook 的评论与关注**（目前排程里对 facebook 直接跳过）；Facebook API 发帖（`facebook_api.py` 已备，缺 token）
 
 ## 目录分工
 

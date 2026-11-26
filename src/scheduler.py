@@ -146,6 +146,12 @@ class DayPlanner:
             actions.pop("comments", None)
             actions.pop("post", None)
 
+        # Facebook 现状（2026-11-26）：只有主页发帖可用，评论/关注适配器未实现。
+        # 排程里直接不写这两项，避免"计划说有评论、实际永远不做"的假象。
+        if self.platform == "facebook":
+            actions.pop("comments", None)
+            actions.pop("follows", None)
+
         return actions
 
     def plan_day(self, day: date | None = None) -> list[dict]:
@@ -320,6 +326,11 @@ class Scheduler:
         keywords = list(self.config.get("schedule.comment_keywords", []) or [])
 
         follows = int(actions.get("follows") or 0)
+        # 2026-11-26：Facebook 的评论/关注适配器还没实现（只有主页发帖），
+        # 这里显式跳过，避免守护进程在 FB 上反复抛异常、白占时段。
+        # 领英不受影响：platform 为 linkedin 时照旧执行。
+        if platform == "facebook":
+            follows = 0
         if follows > 0:
 
             def _follow() -> dict:
@@ -334,6 +345,8 @@ class Scheduler:
             run_step("follow", _follow)
 
         comments = int(actions.get("comments") or 0)
+        if platform == "facebook":
+            comments = 0
         if comments > 0:
             # 当日额度兜底：排程只是"计划"，这里按今天真实已用量再裁一次。
             # 某个时段被跳过/延迟后，后面的时段不该把额度叠加用掉。
