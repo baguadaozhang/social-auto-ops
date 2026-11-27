@@ -184,11 +184,19 @@ class Follower:
             result["error"] = str(exc)
             return result
 
-        self.humanizer.warmup(page)
         impl = LinkedInPlatform(
             self.browser, self.humanizer, self.risk, self.db, self.config
         )
-        result["cards_found"] = impl.count_cards(page)
+        # 拦截页要单独报出来：它会让后面每一步都"找不到元素"，
+        # 报成"DOM 改版"会把人带偏到错误的方向。
+        blocker = impl.detect_blocker(page)
+        if blocker:
+            result["error"] = blocker
+            return result
+
+        self.humanizer.warmup(page)
+        # 卡片要等渲染出来再数（2026-11-26 / 11-27 连续两个上午都数到 0）
+        result["cards_found"] = impl.wait_cards(page)
 
         done = 0
         index = 0

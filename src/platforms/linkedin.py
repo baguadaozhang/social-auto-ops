@@ -372,6 +372,30 @@ class LinkedInPlatform(BasePlatform):
         self.db.log(self.name, "post", "purged_leftover", {"note": "清理了上次遗留的空发布窗口"})
         return {"ok": True, "purged": True}
 
+    # 账号级拦截页的 URL 特征（2026-11-27 实测：登录态还在，但所有页面都被
+    # 重定向到 /check/china/add-phone，页面不渲染内容，脚本会误判成 DOM 改版）
+    _GATE_URL_PATTERNS = ("/check/", "add-phone", "checkpoint", "authwall")
+
+    def detect_blocker(self, page) -> str | None:
+        """识别账号级拦截页，返回给人类看的原因；没有拦截返回 None。
+
+        只读 URL 和页面标题里极少量的文案，不做任何绕行尝试——这类拦截
+        只能由人工在真实浏览器里完成验证。
+        """
+        try:
+            url = str(page.url or "")
+        except Exception:
+            url = ""
+        low = url.lower()
+        for pattern in self._GATE_URL_PATTERNS:
+            if pattern in low:
+                short = url.split("?")[0]
+                return (
+                    f"账号被拦在验证页（{short}）：需要人工在浏览器里完成验证，"
+                    "脚本不会绕过"
+                )
+        return None
+
     def post(self, content: str, media: list[str] | None = None) -> dict:
         """发帖流程：安全检查 → 热身 → 打开编辑器 → [上传媒体] → 拟真输入 → 发布。"""
         try:
@@ -384,6 +408,15 @@ class LinkedInPlatform(BasePlatform):
             page = self.page()
             # 页面级风控扫描
             self.risk.check_page(page, self.name)
+
+            # 账号级拦截页（补手机号 / checkpoint / 登录墙）先判掉。
+            # 2026-11-27 那次就是栽在这：所有页面被重定向到 /check/china/add-phone，
+            # 页面一片空白，脚本却报「未找到发帖入口，页面结构可能已改版」，
+            # 看上去像 DOM 改版，实际是账号被卡在验证流程里，白白浪费排查时间。
+            blocker = self.detect_blocker(page)
+            if blocker:
+                self.debug_shot(page, "blocked_gate")
+                return self._on_failure(content, blocker)
 
             # 会话热身：先像人一样逛一会儿
             self.humanizer.warmup(page)
@@ -1007,6 +1040,32 @@ class LinkedInPlatform(BasePlatform):
             return page.locator("div[role='listitem']").count()
         except Exception:
             return 0
+
+    def wait_cards(self, page, timeout_s: float = 15.0) -> int:
+        """等信息流/搜索结果真正把卡片渲染出来，返回卡片数。
+
+        2026-11-26 10:11 和 11-27 10:43 两个上午时段都是 cards_found=0：
+        页面 readyState 已经 complete，但结果卡还没插进 DOM，数一次就是 0，
+        关注步骤整段空转。所以不能只数一次，要给它渲染时间；超时再刷新一次。
+        """
+        deadline = time.time() + timeout_s
+        count = 0
+        while time.time() < deadline:
+            count = self.count_cards(page)
+            if count > 0:
+                return count
+            page.wait_for_timeout(500)
+        try:
+            page.reload(wait_until="domcontentloaded", timeout=30000)
+        except Exception:
+            return count
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            count = self.count_cards(page)
+            if count > 0:
+                return count
+            page.wait_for_timeout(500)
+        return count
 
     def find_commentable_index(
         self, page, start: int = 0, max_scan: int = 12

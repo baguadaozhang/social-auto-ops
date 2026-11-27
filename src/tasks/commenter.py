@@ -403,7 +403,17 @@ class Commenter:
         self.humanizer.warmup(page)
 
         impl = self.platform(platform)
-        cards = impl.count_cards(page)  # type: ignore[attr-defined]
+        # 账号级拦截页（补手机号 / checkpoint）要先报出来，
+        # 否则会被当成"页面上没有卡片"这种含糊错误。
+        blocker = getattr(impl, "detect_blocker", None)
+        if callable(blocker):
+            reason = blocker(page)
+            if reason:
+                result["error"] = reason
+                return result
+        # 卡片可能还在渲染，等一会儿再数（和关注步骤同样的坑）
+        wait_cards = getattr(impl, "wait_cards", None)
+        cards = wait_cards(page) if callable(wait_cards) else impl.count_cards(page)  # type: ignore[attr-defined]
         result["cards_found"] = cards
         if cards == 0:
             result["error"] = "页面上没有找到帖子卡片"

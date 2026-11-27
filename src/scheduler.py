@@ -333,16 +333,65 @@ class Scheduler:
             follows = 0
         if follows > 0:
 
-            def _follow() -> dict:
+            def _pick_kw(exclude: str | None = None) -> str | None:
+                pool = [k for k in keywords if k != exclude] or keywords
+                return random.choice(pool) if pool else None
+
+            def _one_round(kw: str | None) -> dict:
                 return Follower(
                     self.browser, self.humanizer, self.risk, self.db, self.config
-                ).run(
-                    count=follows,
-                    platform=platform,
-                    keyword=random.choice(keywords) if keywords else None,
+                ).run(count=follows, platform=platform, keyword=kw)
+
+            def _follow() -> dict:
+                kw = _pick_kw()
+                out = _one_round(kw)
+                # 2026-11-26 10:11 那次：搜索页一张卡都没出来，3 个关注一个没做，
+                # 时段还记成了 done，事后只能翻日志才发现。搜到 0 张卡通常是页面
+                # 没加载出来（而不是真的没人可加），换个关键词再试一次更像真人。
+                empty = (
+                    not out.get("error")
+                    and int(out.get("success") or 0) == 0
+                    and int(out.get("cards_found") or 0) == 0
                 )
+                if not empty:
+                    return out
+                retry_kw = _pick_kw(kw)
+                if not retry_kw or retry_kw == kw:
+                    return out
+                self.db.log(
+                    platform, "follow", "retry_empty",
+                    {"keyword": kw, "retry_keyword": retry_kw},
+                )
+                again = _one_round(retry_kw)
+                again["retried_for_empty_candidates"] = True
+                again["first_attempt"] = {
+                    "keyword": kw,
+                    "cards_found": out.get("cards_found"),
+                }
+                return again
 
             run_step("follow", _follow)
+
+            # 「计划了但没做到」必须看得见。以前 0 成功也记 done，
+            # 连着几天下来会误以为关注一直在涨。
+            if not errors.get("follow"):
+                got = int((results.get("follow") or {}).get("success") or 0)
+                cards = int((results.get("follow") or {}).get("cards_found") or 0)
+                skipped = int((results.get("follow") or {}).get("skipped") or 0)
+                err = (results.get("follow") or {}).get("error")
+                if err:
+                    errors["follow"] = str(err)
+                elif got < follows:
+                    if cards == 0:
+                        errors["follow"] = (
+                            f"计划 {follows} 个，候选 0 张，实际 {got} 个"
+                        )
+                    elif skipped < cards:
+                        errors["follow"] = (
+                            f"计划 {follows} 个，实际 {got} 个"
+                            f"（候选 {cards} 张，过滤 {skipped} 张）"
+                        )
+                    # 全部候选都被质量门槛过滤，是正常结果，不记失败
 
         comments = int(actions.get("comments") or 0)
         if platform == "facebook":
