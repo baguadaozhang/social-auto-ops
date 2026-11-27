@@ -18,6 +18,7 @@ from .browser import BrowserManager
 from .database import Database
 from .humanize import Humanizer
 from .comment_ramp import CommentRamp
+from .page_guard import PageGuard
 from .risk_control import CircuitBreakerTripped, RiskController
 from .tasks.commenter import Commenter
 from .tasks.follower import Follower
@@ -523,6 +524,27 @@ class Scheduler:
                 if result["next"] and result["next"] != last_next:
                     print(f"  下一个时段：{result['next']}", flush=True)
                     last_next = result["next"]
+
+                # 每天查一次"能不能建公司主页"。
+                # 2026-11-27 实测：新账号建页被 LinkedIn 用 403/4027 挡住，
+                # 门槛是工作场所验证 + 账号成熟度。这个资格是窗口性的，
+                # 放行过一次没建（或者建之前又被收回），就得再等。
+                # 所以每天探一次：一旦 eligible 就记日志、写标记文件，人立刻去建。
+                try:
+                    guard = PageGuard(self.config, self.db, self.browser)
+                    if guard.due_today(platform):
+                        g = guard.check(platform)
+                        print(
+                            f"[{datetime.now():%H:%M:%S}] 建页资格检查："
+                            f"status={g.get('status')} code={g.get('code')} "
+                            f"eligible={g.get('eligible')}",
+                            flush=True,
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    print(
+                        f"[{datetime.now():%H:%M:%S}] 建页资格检查异常：{exc}",
+                        flush=True,
+                    )
             except KeyboardInterrupt:
                 print("已停止。", flush=True)
                 return
