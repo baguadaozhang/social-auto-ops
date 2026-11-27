@@ -169,6 +169,17 @@ class LinkedInPlatform(BasePlatform):
         "button[aria-label*='照片或视频']",
         "button[aria-label*='photo or video']",
     ]
+    # 媒体面板里的"上传"入口（2026-11-27 实测：点「媒体文件」后先进面板，
+    # 面板上有「上传本地文件」，隐藏的 input[type=file] 也在这一层）
+    _MEDIA_UPLOAD_BTN_SELECTORS = [
+        "button:has-text('上传本地文件')",
+        "button:has-text('选择文件')",
+        "button:has-text('Upload from computer')",
+        "button:has-text('Select files')",
+        "button[aria-label*='上传本地文件']",
+        "button[aria-label*='Upload from computer']",
+    ]
+
     _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".bmp"}
     _VIDEO_EXTS = {".mp4", ".mov", ".m4v"}
 
@@ -260,35 +271,109 @@ class LinkedInPlatform(BasePlatform):
         只负责"文件挂上去且处理完"，正文仍由调用方输入（顺序不能反）。
         视频处理比图片慢得多，所以给足超时，并要求"连续两次检测都就绪"才算完成，
         避免正好在进度条消失的那一瞬误判。
+
+        2026-11-27 实测（视频）：点「媒体文件」并不会直接弹系统文件选择器，
+        而是先进一个中间面板（隐藏的 input[type=file] + 「上传本地文件」「下一步」）。
+        老代码直接 expect_file_chooser，8 秒超时，视频永远传不上去。
         """
         button = self._first_in(page, self._MEDIA_BTN_SELECTORS)
         if button is None:
             return {"ok": False, "error": "未找到媒体按钮（界面可能已改版）"}
-        try:
-            with page.expect_file_chooser(timeout=8000) as chooser_info:
-                self.humanizer.human_click(button)
-            chooser = chooser_info.value
-            chooser.set_files(files)
-        except Exception as exc:
-            return {"ok": False, "error": f"打开文件选择器失败: {type(exc).__name__}: {exc}"}
+        self.humanizer.human_click(button)
+
+        submitted = self._feed_hidden_input(page, files)
+        if not submitted:
+            upload_btn = self.find_first(
+                page, self._MEDIA_UPLOAD_BTN_SELECTORS, timeout_ms=6000
+            )
+            if upload_btn is None:
+                return {
+                    "ok": False,
+                    "error": "媒体面板里既没有文件输入框，也没有上传按钮",
+                }
+            try:
+                with page.expect_file_chooser(timeout=8000) as chooser_info:
+                    self.humanizer.human_click(upload_btn)
+                chooser_info.value.set_files(files)
+                submitted = True
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "error": f"打开文件选择器失败: {type(exc).__name__}: {exc}",
+                }
+        if not submitted:
+            return {"ok": False, "error": "文件没能交给浏览器"}
 
         deadline = time.monotonic() + timeout_s
         settled = 0
         last: dict = {}
+        advanced = False
         while time.monotonic() < deadline:
             last = self._media_state(page)
             if last.get("ready"):
                 settled += 1
                 if settled >= 2:
-                    return {"ok": True, "state": last}
+                    break
             else:
                 settled = 0
+            # 面板停住时，「下一步」变成可点就是"处理完了"的另一个信号
+            if not advanced:
+                point = self._next_button_point(page)
+                if point:
+                    page.mouse.click(point["x"], point["y"])
+                    page_wait(page, 1800)
+                    advanced = True
+                    continue
             page_wait(page, 1200, jitter=0.3)
-        return {
-            "ok": False,
-            "error": f"媒体处理超时（{int(timeout_s)}s 内未就绪）",
-            "state": last,
-        }
+        else:
+            return {
+                "ok": False,
+                "error": f"媒体处理超时（{int(timeout_s)}s 内未就绪）",
+                "state": last,
+            }
+
+        # 文件就绪后可能仍停在媒体面板上，点「下一步」回到编辑器再发布
+        if not advanced:
+            point = self._next_button_point(page)
+            if point:
+                page.mouse.click(point["x"], point["y"])
+                page_wait(page, 1800)
+        return {"ok": True, "state": last}
+
+    def _feed_hidden_input(self, page, files: list[str]) -> bool:
+        """面板里通常有个隐藏的 input[type=file]，直接塞文件比点按钮稳。"""
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            try:
+                locator = page.locator("input[type='file']").first
+                if locator.count() > 0:
+                    locator.set_input_files(files)
+                    return True
+            except Exception:
+                pass
+            page_wait(page, 400)
+        return False
+
+    _NEXT_BTN_JS = r"""
+    () => {
+      for (const b of document.querySelectorAll('button, [role=button]')) {
+        const r = b.getBoundingClientRect();
+        if (r.width === 0) continue;
+        const t = ((b.innerText || '') + ' ' + (b.getAttribute('aria-label') || '')).trim();
+        if (!/^(下一步|Next)/.test(t)) continue;
+        const disabled = b.disabled === true || b.getAttribute('aria-disabled') === 'true';
+        if (disabled) continue;
+        return {x: r.x + r.width / 2, y: r.y + r.height / 2};
+      }
+      return null;
+    }
+    """
+
+    def _next_button_point(self, page) -> dict | None:
+        try:
+            return page.evaluate(self._NEXT_BTN_JS)
+        except Exception:
+            return None
 
     _PURGE_JS = r"""
     () => {
